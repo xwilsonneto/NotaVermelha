@@ -1,41 +1,69 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
-# dependencies
+# ========================
+# Dependencies
+# ========================
 node_modules/
 
-# Expo
+# ========================
+# Expo / React Native
+# ========================
 .expo/
-dist/
+.expo-shared/
+.expo-cache/
+
+# Metro bundler cache
+.metro-cache/
+
+# Expo web build
 web-build/
-expo-env.d.ts
+dist/
 
-# Native
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
+# ========================
+# Environment variables
+# ========================
+.env
+.env.local
+.env.development
+.env.production
 
-# Metro
-.metro-health-check*
+# ========================
+# Logs
+# ========================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
+# ========================
+# OS files
+# ========================
 .DS_Store
-*.pem
+Thumbs.db
 
-# local env files
-.env*.local
+# ========================
+# IDE
+# ========================
+.vscode/
+.idea/
 
-# typescript
+# ========================
+# TypeScript
+# ========================
 *.tsbuildinfo
 
-# generated native folders
-/ios
-/android
+# ========================
+# Backend build
+# ========================
+backend/dist/
+backend/build/
+
+# ========================
+# React Native / Expo native
+# ========================
+android/
+ios/
+
+# ========================
+# Misc cache
+# ========================
+.cache/
+.tmp/
