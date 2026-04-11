@@ -5,7 +5,7 @@ const artistController = require("../controllers/artistController");
 const authMiddleware = require("../middleware/authMiddleware");
 const roleMiddleware = require("../middleware/roleMiddleware");
 
-// criar perfil de artista
+// Criar perfil de artista
 router.post(
   "/",
   authMiddleware,
@@ -13,10 +13,19 @@ router.post(
   artistController.createArtistProfile
 );
 
-// listar artistas
+// Listar artistas
 router.get("/", artistController.getArtists);
 
-// buscar artista específico
+// Buscar artista específico
 router.get("/:id", artistController.getArtistById);
+
+// Seguir artista — requer login
+router.post("/:id/follow", authMiddleware, artistController.followArtist);
+
+// Deixar de seguir artista — requer login
+router.delete("/:id/follow", authMiddleware, artistController.unfollowArtist);
+
+// Checar se usuário segue artista — requer login
+router.get("/:id/following", authMiddleware, artistController.checkFollowing);
 
 module.exports = router;

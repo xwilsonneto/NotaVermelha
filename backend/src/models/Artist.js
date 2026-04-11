@@ -22,7 +22,7 @@ const artistSchema = new mongoose.Schema({
   },
   genre: [{
     type: String,
-    enum: ['rock', 'pop', 'hiphop', 'jazz', 'eletronic', 'classical', 'reggae', 'sertanejo', 'funk', 'mpb', 'indie', 'metal', 'punk', 'blues', 'r&b', 'gospel'],
+    enum: ['rock', 'pop', 'hiphop', 'jazz', 'hardcore melódico', 'eletronic', 'classical', 'reggae', 'sertanejo', 'funk', 'mpb', 'indie', 'metal', 'punk', 'blues', 'r&b', 'gospel'],
   }],
   country: {
     type: String,

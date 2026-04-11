@@ -8,6 +8,9 @@ const upload = require("../middleware/uploadMiddleware");
 
 router.get("/", trackController.getTracks);
 
+// Tracks curtidas pelo usuário autenticado
+router.get("/liked", authMiddleware, trackController.getLikedTracks);
+
 router.get("/:id", trackController.getTrackById);
 
 router.post(
@@ -21,10 +24,10 @@ router.post(
   trackController.uploadTrack
 );
 
-// ✅ Play — público (não requer login para contabilizar)
+// Play — público
 router.post("/:id/play", trackController.registerPlay);
 
-// ✅ Like / Unlike — requer login
+// Like / Unlike — requer login
 router.post("/:id/like", authMiddleware, trackController.likeTrack);
 router.delete("/:id/like", authMiddleware, trackController.unlikeTrack);
 

@@ -1,50 +1,46 @@
-const User = require("../models/User");
 const authService = require("../services/authService");
 
-exports.register = async(req,res)=>{
+exports.register = async (req, res) => {
+  try {
+    const { username, email, password, role, name, bandInfo } = req.body;
 
-try{
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: "username, email e senha são obrigatórios" });
+    }
 
-const { username, email, password, role, bandInfo } = req.body;
+    if (password.length < 6) {
+      return res.status(400).json({ error: "Senha deve ter no mínimo 6 caracteres" });
+    }
 
-if(!username || !email || !password){
-return res.status(400).json({ error:"username, email e senha são obrigatórios" });
-}
+    const { user, token } = await authService.register({
+      username,
+      email,
+      password,
+      role,
+      name,
+      bandInfo,
+    });
 
-if(password.length < 6){
-return res.status(400).json({ error:"Senha deve ter no mínimo 6 caracteres" });
-}
+    res.status(201).json({ success: true, data: { user, token } });
 
-const { user, token } = await authService.register({ username, email, password, role, bandInfo });
-
-res.status(201).json({ success:true, data:{ user, token } });
-
-}catch(err){
-
-res.status(400).json({ error:err.message });
-
-}
-
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 };
 
-exports.login = async(req,res)=>{
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-try{
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email e senha são obrigatórios" });
+    }
 
-const { email, password } = req.body;
+    const { user, token } = await authService.login({ email, password });
 
-if(!email || !password){
-return res.status(400).json({ error:"Email e senha são obrigatórios" });
-}
+    res.json({ success: true, data: { user, token } });
 
-const { user, token } = await authService.login({ email, password });
-
-res.json({ success:true, data:{ user, token } });
-
-}catch(err){
-
-res.status(401).json({ error:err.message });
-
-}
-
+  } catch (err) {
+    res.status(401).json({ error: err.message });
+  }
 };

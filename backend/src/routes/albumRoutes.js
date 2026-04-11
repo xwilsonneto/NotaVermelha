@@ -5,7 +5,7 @@ const albumController = require("../controllers/albumController");
 const authMiddleware = require("../middleware/authMiddleware");
 const roleMiddleware = require("../middleware/roleMiddleware");
 
-// criar álbum (apenas artistas)
+// Criar álbum (apenas artistas)
 router.post(
   "/",
   authMiddleware,
@@ -13,18 +13,23 @@ router.post(
   albumController.createAlbum
 );
 
-// listar álbuns
+// Listar álbuns
 router.get("/", albumController.getAlbums);
 
-// buscar álbum específico
+// Buscar álbum específico
 router.get("/:id", albumController.getAlbumById);
 
-// deletar álbum
+// Deletar álbum
 router.delete(
   "/:id",
   authMiddleware,
   roleMiddleware(["artist", "label", "band"]),
   albumController.deleteAlbum
 );
+
+// ─── Like / Unlike / Check ───────────────────────────────────────────────────
+router.post("/:id/like",    authMiddleware, albumController.likeAlbum);
+router.delete("/:id/like",  authMiddleware, albumController.unlikeAlbum);
+router.get("/:id/like",     authMiddleware, albumController.checkLike);
 
 module.exports = router;

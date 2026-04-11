@@ -88,70 +88,36 @@ const DiscoverScreen: React.FC = () => {
       } else if (result.type === 'album') {
         const album = result.data as Album;
         if (album?._id) {
-          const albumTracks = tracks.filter(t => t.album?._id === album._id);
-          if (albumTracks.length > 0 && albumTracks[0].audioUrl) {
-            playTrack(albumTracks[0]);
-            navigation.navigate('Player');
-          }
+          // ✅ Vai para a tela do álbum
+          navigation.navigate('Album', { albumId: album._id });
         }
       } else if (result.type === 'artist') {
         const artist = result.data as Artist;
         if (artist?._id) {
-          const artistTracks = getTracksByArtist(artist._id);
-          if (artistTracks.length > 0 && artistTracks[0].audioUrl) {
-            playTrack(artistTracks[0]);
-            navigation.navigate('Player');
-          }
+          navigation.navigate('Artist', { artistId: artist._id });
         }
       }
     } catch (error) {
       console.error('💥 Erro ao processar resultado:', error);
     }
-  }, [playTrack, navigation, tracks, getTracksByArtist]);
+  }, [playTrack, navigation]);
 
-  // ✅ FIX PISCAR: performSearch é estável — só depende de tracks/albums/artists
-  // que são arrays do Context (referência estável entre renders do DiscoverScreen)
+  // Ordem: artista > TODOS os álbuns > TODAS as músicas
   const performSearch = useCallback((query: string): SearchResult[] => {
     if (!query.trim()) return [];
 
     const normalizedQuery = query.toLowerCase();
-    const results: SearchResult[] = [];
 
-    tracks.forEach(track => {
-      if (
-        track.title?.toLowerCase().includes(normalizedQuery) ||
-        track.artists?.some(artist => artist.name?.toLowerCase().includes(normalizedQuery)) ||
-        track.album?.title?.toLowerCase().includes(normalizedQuery)
-      ) {
-        results.push({
-          id: `music-${track._id}`,
-          type: 'music',
-          title: track.title || 'Título desconhecido',
-          subtitle: track.artists?.map(a => a.name).join(', ') || 'Artista desconhecido',
-          image: track.album?.cover || track.coverUrl || '',
-          data: track,
-        });
-      }
-    });
+    // Listas separadas para garantir a ordem correta independente de quantos álbuns o artista tiver
+    const artistResults: SearchResult[] = [];
+    const albumResults: SearchResult[]  = [];
+    const trackResults: SearchResult[]  = [];
 
-    albums.forEach(album => {
-      if (album.title?.toLowerCase().includes(normalizedQuery)) {
-        const albumTracks = tracks.filter(t => t.album?._id === album._id);
-        results.push({
-          id: `album-${album._id}`,
-          type: 'album',
-          title: album.title || 'Álbum desconhecido',
-          subtitle: `Álbum • ${albumTracks.length} música${albumTracks.length !== 1 ? 's' : ''}`,
-          image: album.cover || '',
-          data: album,
-        });
-      }
-    });
-
+    // 1º Artistas
     artists.forEach(artist => {
       if (artist.name?.toLowerCase().includes(normalizedQuery)) {
         const artistTracks = getTracksByArtist(artist._id);
-        results.push({
+        artistResults.push({
           id: `artist-${artist._id}`,
           type: 'artist',
           title: artist.name || 'Artista desconhecido',
@@ -162,12 +128,70 @@ const DiscoverScreen: React.FC = () => {
       }
     });
 
-    return results;
+    // 2º Álbuns — todos antes de qualquer música
+    albums.forEach(album => {
+      if (album.title?.toLowerCase().includes(normalizedQuery)) {
+        const albumTracks = tracks.filter(t => t.album?._id === album._id);
+        albumResults.push({
+          id: `album-${album._id}`,
+          type: 'album',
+          title: album.title || 'Álbum desconhecido',
+          subtitle: `Álbum • ${albumTracks.length} música${albumTracks.length !== 1 ? 's' : ''}`,
+          image: album.cover || '',
+          data: album,
+        });
+      }
+    });
+
+    // Álbuns dos artistas encontrados também sobem (se ainda não estiverem na lista)
+    const albumIdsInResults = new Set(albumResults.map(r => r.id));
+    artistResults.forEach(artistResult => {
+      const artist = artistResult.data;
+      albums
+        .filter(album => {
+          // álbum pertence ao artista e ainda não está nos resultados
+          const belongsToArtist = tracks.some(
+            t => t.album?._id === album._id &&
+                 t.artists?.some((a: any) => a._id === artist._id)
+          );
+          return belongsToArtist && !albumIdsInResults.has(`album-${album._id}`);
+        })
+        .forEach(album => {
+          const albumTracks = tracks.filter(t => t.album?._id === album._id);
+          albumResults.push({
+            id: `album-${album._id}`,
+            type: 'album',
+            title: album.title || 'Álbum desconhecido',
+            subtitle: `Álbum • ${albumTracks.length} música${albumTracks.length !== 1 ? 's' : ''}`,
+            image: album.cover || '',
+            data: album,
+          });
+          albumIdsInResults.add(`album-${album._id}`);
+        });
+    });
+
+    // 3º Músicas — sempre por último
+    tracks.forEach(track => {
+      if (
+        track.title?.toLowerCase().includes(normalizedQuery) ||
+        track.artists?.some(artist => artist.name?.toLowerCase().includes(normalizedQuery)) ||
+        track.album?.title?.toLowerCase().includes(normalizedQuery)
+      ) {
+        trackResults.push({
+          id: `music-${track._id}`,
+          type: 'music',
+          title: track.title || 'Título desconhecido',
+          subtitle: track.artists?.map((a: any) => a.name).join(', ') || 'Artista desconhecido',
+          image: track.album?.cover || track.coverUrl || '',
+          data: track,
+        });
+      }
+    });
+
+    // Retorna sempre: artistas → todos os álbuns → todas as músicas
+    return [...artistResults, ...albumResults, ...trackResults];
   }, [tracks, albums, artists, getTracksByArtist]);
 
-  // ✅ FIX PISCAR: recentSearches REMOVIDO das dependências.
-  // Ele era dependência mas causava re-execução do debounce a cada busca salva.
-  // Usamos ref para acessar o valor atual sem adicionar à dep array.
   const recentSearchesRef = useRef(recentSearches);
   recentSearchesRef.current = recentSearches;
 
@@ -185,7 +209,7 @@ const DiscoverScreen: React.FC = () => {
       setSearchResults(results);
       setIsSearching(false);
 
-      // Salvar busca recente usando ref — sem adicionar recentSearches às deps
+      // Salvar busca recente
       const trimmed = searchQuery.trim();
       if (trimmed && !recentSearchesRef.current.includes(trimmed)) {
         setRecentSearches(prev => [trimmed, ...prev.slice(0, 4)]);
@@ -193,7 +217,7 @@ const DiscoverScreen: React.FC = () => {
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [searchQuery, performSearch]); // ✅ recentSearches fora das deps
+  }, [searchQuery, performSearch]);
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);

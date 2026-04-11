@@ -11,10 +11,17 @@ interface User {
   email: string;
   role: 'listener' | 'band' | 'artist' | 'label' | 'admin';
   avatar?: string;
+  artistId?: string; // ID do documento Artist vinculado (para bands/artists)
+  likedTracks?: string[]; // IDs das tracks curtidas
   bandInfo?: {
     genre: string;
     city: string;
     bio: string;
+    socialLinks?: {
+      instagram?: string;
+      spotify?: string;
+      youtube?: string;
+    };
   };
 }
 
@@ -23,10 +30,17 @@ export interface RegisterData {
   email: string;
   password: string;
   role: 'listener' | 'band';
+  name?: string; // Nome de exibição
+  avatar?: string; // URL do avatar (após upload)
   bandInfo?: {
     genre: string;
     city: string;
     bio: string;
+    socialLinks?: {
+      instagram?: string;
+      spotify?: string;
+      youtube?: string;
+    };
   };
 }
 
@@ -40,11 +54,12 @@ interface AuthState {
   register: (data: RegisterData) => Promise<void>;
   logout: () => void;
   clearError: () => void;
+  updateUser: (data: Partial<User>) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       token: null,
       isAuthenticated: false,
@@ -109,11 +124,17 @@ export const useAuthStore = create<AuthState>()(
       },
 
       clearError: () => set({ error: null }),
+
+      // Atualiza campos do usuário local sem precisar re-autenticar
+      updateUser: (data: Partial<User>) => {
+        const current = get().user;
+        if (!current) return;
+        set({ user: { ...current, ...data } });
+      },
     }),
     {
       name: 'auth-storage',
       storage: createJSONStorage(() => AsyncStorage),
-      // Persiste apenas o essencial — isLoading/error são estado de sessão
       partialize: (state) => ({
         user: state.user,
         token: state.token,

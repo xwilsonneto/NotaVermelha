@@ -216,6 +216,64 @@ export const trackService = {
   },
 };
 
+// ─── ARTISTS (NOVO) ────────────────────────────────────────────────────────
+
+import { useAuthStore } from '../store/authStore';
+
+const getAuthHeaders = (): Record<string, string> => {
+  const token = useAuthStore.getState().token;
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+};
+
+export const artistService = {
+  follow: async (artistId: string): Promise<void> => {
+    const headers = getAuthHeaders();
+    const res = await fetch(`${API_URL}/artists/${artistId}/follow`, { method: 'POST', headers });
+    if (!res.ok) throw new Error('Erro ao seguir artista');
+  },
+
+  unfollow: async (artistId: string): Promise<void> => {
+    const headers = getAuthHeaders();
+    const res = await fetch(`${API_URL}/artists/${artistId}/follow`, { method: 'DELETE', headers });
+    if (!res.ok) throw new Error('Erro ao deixar de seguir artista');
+  },
+
+  checkFollowing: async (artistId: string): Promise<boolean> => {
+    const headers = getAuthHeaders();
+    const res = await fetch(`${API_URL}/artists/${artistId}/following`, { method: 'GET', headers });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.isFollowing ?? false;
+  },
+};
+
+// ─── ALBUMS (NOVO) ─────────────────────────────────────────────────────────
+
+export const albumService = {
+  like: async (albumId: string): Promise<void> => {
+    const headers = getAuthHeaders();
+    const res = await fetch(`${API_URL}/albums/${albumId}/like`, { method: 'POST', headers });
+    if (!res.ok) throw new Error('Erro ao curtir álbum');
+  },
+
+  unlike: async (albumId: string): Promise<void> => {
+    const headers = getAuthHeaders();
+    const res = await fetch(`${API_URL}/albums/${albumId}/like`, { method: 'DELETE', headers });
+    if (!res.ok) throw new Error('Erro ao descurtir álbum');
+  },
+
+  checkLike: async (albumId: string): Promise<boolean> => {
+    const headers = getAuthHeaders();
+    const res = await fetch(`${API_URL}/albums/${albumId}/like`, { method: 'GET', headers });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.liked ?? false;
+  },
+};
+
 // ─── UTILS ─────────────────────────────────────────────────────────────────
 
 export const testConnection = async (): Promise<boolean> => {

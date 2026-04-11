@@ -1,17 +1,22 @@
 // src/screens/RegisterScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StatusBar,
-  ScrollView,
   Animated,
   Easing,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
+  Image,
+  Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  ScrollView,
+  KeyboardEvent,
+  LayoutChangeEvent,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -19,19 +24,155 @@ import { RootStackParamList } from '../navigation/AppNavigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 
 type RegisterScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+const SCROLL_PADDING_ABOVE = 120;
+
+function useKeyboardHeight() {
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e: KeyboardEvent) => setKeyboardHeight(e.endCoordinates.height),
+    );
+
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardHeight(0),
+    );
+
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  return keyboardHeight;
+}
+
+function LineInput({
+  placeholder,
+  value,
+  onChangeText,
+  secureTextEntry,
+  keyboardType,
+  autoCapitalize,
+  editable = true,
+  multiline,
+  numberOfLines,
+  rightElement,
+  onSubmitEditing,
+  returnKeyType,
+  inputRef,
+  scrollViewRef,
+}: {
+  placeholder: string;
+  value: string;
+  onChangeText: (t: string) => void;
+  secureTextEntry?: boolean;
+  keyboardType?: any;
+  autoCapitalize?: any;
+  editable?: boolean;
+  multiline?: boolean;
+  numberOfLines?: number;
+  rightElement?: React.ReactNode;
+  onSubmitEditing?: () => void;
+  returnKeyType?: any;
+  inputRef?: React.RefObject<TextInput | null>;
+  scrollViewRef: React.RefObject<ScrollView | null>;
+}) {
+
+  const yPosition = useRef(0);
+
+  const handleLayout = (event: LayoutChangeEvent) => {
+    yPosition.current = event.nativeEvent.layout.y;
+  };
+
+  const handleFocus = useCallback(() => {
+    if (!scrollViewRef.current) return;
+
+    scrollViewRef.current.scrollTo({
+      y: yPosition.current - SCROLL_PADDING_ABOVE,
+      animated: true,
+    });
+
+  }, [scrollViewRef]);
+
+  return (
+    <View
+      onLayout={handleLayout}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderBottomWidth: 1,
+        borderBottomColor: '#4b5563',
+        marginBottom: 28,
+      }}
+    >
+      <TextInput
+        ref={inputRef}
+        placeholder={placeholder}
+        placeholderTextColor="#9ca3af"
+        value={value}
+        onChangeText={onChangeText}
+        secureTextEntry={secureTextEntry}
+        keyboardType={keyboardType}
+        autoCapitalize={autoCapitalize ?? 'sentences'}
+        autoCorrect={false}
+        style={{
+          flex: 1,
+          color: '#fff',
+          fontSize: 15,
+          paddingBottom: 12,
+          fontFamily: 'Poppins_400Regular',
+        }}
+        editable={editable}
+        multiline={multiline}
+        numberOfLines={numberOfLines}
+        onSubmitEditing={onSubmitEditing}
+        returnKeyType={returnKeyType}
+        blurOnSubmit={false}
+        onFocus={handleFocus}
+      />
+      {rightElement}
+    </View>
+  );
+}
+
 export default function RegisterScreen() {
+
   const navigation = useNavigation<RegisterScreenNavigationProp>();
-  // ✅ isAuthenticated removido — não é mais usado aqui
   const { register, isLoading, error, clearError } = useAuthStore();
+
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
+
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  const nameRef = useRef<TextInput>(null);
+  const usernameRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+  const confirmPasswordRef = useRef<TextInput>(null);
+  const genreRef = useRef<TextInput>(null);
+  const cityRef = useRef<TextInput>(null);
+  const bioRef = useRef<TextInput>(null);
+  const instagramRef = useRef<TextInput>(null);
+  const spotifyRef = useRef<TextInput>(null);
+  const youtubeRef = useRef<TextInput>(null);
 
   const [role, setRole] = useState<'listener' | 'band'>('listener');
   const [showPassword, setShowPassword] = useState(false);
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+
   const [form, setForm] = useState({
+    name: '',
     username: '',
     email: '',
     password: '',
@@ -39,12 +180,16 @@ export default function RegisterScreen() {
     genre: '',
     city: '',
     bio: '',
+    instagram: '',
+    spotify: '',
+    youtube: '',
   });
 
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  const translateY = React.useRef(new Animated.Value(20)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const animY = useRef(new Animated.Value(20)).current;
 
-  React.useEffect(() => {
+  useEffect(() => {
+
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -52,43 +197,74 @@ export default function RegisterScreen() {
         easing: Easing.out(Easing.exp),
         useNativeDriver: true,
       }),
-      Animated.timing(translateY, {
+      Animated.timing(animY, {
         toValue: 0,
         duration: 600,
         easing: Easing.out(Easing.exp),
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
 
-  // ✅ REMOVIDO: useEffect que escutava isAuthenticated e navegava na montagem
-  // Isso causava navegação prematura quando o componente montava com sessão ativa
+  }, []);
 
   const setField = (key: keyof typeof form, value: string) => {
     clearError();
     setForm(prev => ({ ...prev, [key]: value }));
   };
 
+  const pickAvatar = async () => {
+
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (status !== 'granted') {
+      Alert.alert('Permissão necessária', 'Precisamos de acesso à sua galeria para escolher uma foto.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setAvatarUri(result.assets[0].uri);
+    }
+  };
+
   const validate = (): string | null => {
+
+    if (!form.name.trim()) return 'Nome é obrigatório';
     if (!form.username.trim()) return 'Username é obrigatório';
     if (form.username.trim().length < 3) return 'Username deve ter no mínimo 3 caracteres';
     if (!form.email.trim()) return 'Email é obrigatório';
+    if (!EMAIL_REGEX.test(form.email.trim())) return 'Email inválido (ex: nome@dominio.com)';
     if (!form.password) return 'Senha é obrigatória';
     if (form.password.length < 6) return 'Senha deve ter no mínimo 6 caracteres';
     if (form.password !== form.confirmPassword) return 'As senhas não coincidem';
     if (role === 'band' && !form.genre.trim()) return 'Gênero musical é obrigatório para bandas';
+
     return null;
   };
 
   const handleRegister = async () => {
+
+    Keyboard.dismiss();
+
     const validationError = validate();
+
     if (validationError) {
       useAuthStore.setState({ error: validationError });
       return;
     }
+
     clearError();
+
     try {
+
       await register({
+        name: form.name.trim(),
         username: form.username.trim(),
         email: form.email.trim(),
         password: form.password,
@@ -98,274 +274,281 @@ export default function RegisterScreen() {
             genre: form.genre.trim(),
             city: form.city.trim(),
             bio: form.bio.trim(),
+            socialLinks: {
+              instagram: form.instagram.trim(),
+              spotify: form.spotify.trim(),
+              youtube: form.youtube.trim(),
+            },
           },
         }),
       });
-      // ✅ Navega aqui, após o await confirmar sucesso
+
       navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
-    } catch {
-      // erro já está no store, não navega
-    }
+
+    } catch {}
+
   };
+
+  const focusNext = (ref: React.RefObject<TextInput | null>) => ref.current?.focus();
+
+  const avatarInitials = form.name.trim() || form.username.trim() || 'U';
+
+  const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(avatarInitials)}&background=7f1d1d&color=fff&bold=true&size=128`;
+
+  const s = { scrollViewRef };
 
   return (
     <LinearGradient
       colors={['#dc2626', '#7f1d1d', '#0a0a0a']}
       locations={[0, 0.12, 1]}
-      className="flex-1"
+      style={{ flex: 1 }}
     >
-      <StatusBar translucent backgroundColor="transparent" />
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+
       <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+        behavior="padding"
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
       >
+
         <ScrollView
-          className="flex-1"
-          contentContainerStyle={{ flexGrow: 1 }}
+          ref={scrollViewRef}
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingBottom: keyboardHeight > 0
+              ? keyboardHeight + 24
+              : (Platform.OS === 'ios' ? 60 : 40),
+          }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          contentInset={{ bottom: keyboardHeight }}
+          scrollIndicatorInsets={{ bottom: keyboardHeight }}
+          bounces={false}
         >
-          {/* Header */}
-          <View className="px-6 items-center" style={{ paddingTop: insets.top + 40 }}>
-            <View className="flex-row items-center justify-center mb-4">
-              <TouchableOpacity
-                onPress={() => navigation.goBack()}
-                className="absolute left-0 p-2"
-              >
-                <MaterialCommunityIcons name="arrow-left" size={28} color="#f87171" />
-              </TouchableOpacity>
-              <MaterialCommunityIcons name="account-plus" size={40} color="#f87171" />
+
+          <View style={{ paddingTop: insets.top + 24, paddingHorizontal: 24 }}>
+
+            <View style={{ alignItems: 'center' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                <TouchableOpacity
+                  onPress={() => navigation.goBack()}
+                  style={{ position: 'absolute', left: 0, padding: 8 }}
+                >
+                  <MaterialCommunityIcons name="arrow-left" size={28} color="#f87171" />
+                </TouchableOpacity>
+                <MaterialCommunityIcons name="account-plus" size={36} color="#f87171" />
+              </View>
+              <Text style={{ fontFamily: 'Poppins_700Bold', fontSize: 26, color: '#fff', textAlign: 'center', marginBottom: 4 }}>
+                CRIAR CONTA
+              </Text>
+              <Text style={{ fontFamily: 'Poppins_400Regular', fontSize: 14, color: '#e5e7eb', textAlign: 'center' }}>
+                Junte-se à revolução musical
+              </Text>
             </View>
-            <Text
-              className="text-3xl text-white text-center mb-2"
-              style={{ fontFamily: 'Poppins_700Bold' }}
-            >
-              CRIAR CONTA
-            </Text>
-            <Text
-              className="text-base text-gray-200 text-center"
-              style={{ fontFamily: 'Poppins_400Regular' }}
-            >
-              Junte-se à revolução musical
-            </Text>
-          </View>
 
-          <Animated.View
-            className="flex-1 px-6 mt-8"
-            style={{ opacity: fadeAnim, transform: [{ translateY }] }}
-          >
-            <View className="rounded-3xl p-6">
+            <Animated.View style={{ marginTop: 24, opacity: fadeAnim, transform: [{ translateY: animY }] }}>
 
-              {/* Toggle ouvinte / banda */}
-              <View className="flex-row bg-black/30 rounded-2xl p-1 mb-8">
-                <TouchableOpacity
-                  className={`flex-1 py-3 rounded-xl items-center flex-row justify-center gap-2 ${role === 'listener' ? 'bg-red-600' : ''}`}
-                  onPress={() => setRole('listener')}
-                >
-                  <MaterialCommunityIcons
-                    name="account-music"
-                    size={18}
-                    color={role === 'listener' ? '#fff' : '#9ca3af'}
-                  />
-                  <Text
+              <View style={{ flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 16, padding: 4, marginBottom: 28 }}>
+                {(['listener', 'band'] as const).map((r) => (
+                  <TouchableOpacity
+                    key={r}
                     style={{
-                      fontFamily: 'Poppins_600SemiBold',
-                      fontSize: 13,
-                      color: role === 'listener' ? '#fff' : '#9ca3af',
+                      flex: 1,
+                      paddingVertical: 12,
+                      borderRadius: 12,
+                      alignItems: 'center',
+                      flexDirection: 'row',
+                      justifyContent: 'center',
+                      gap: 6,
+                      backgroundColor: role === r ? '#dc2626' : 'transparent',
                     }}
+                    onPress={() => setRole(r)}
                   >
-                    Ouvinte
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className={`flex-1 py-3 rounded-xl items-center flex-row justify-center gap-2 ${role === 'band' ? 'bg-red-600' : ''}`}
-                  onPress={() => setRole('band')}
-                >
-                  <MaterialCommunityIcons
-                    name="guitar-electric"
-                    size={18}
-                    color={role === 'band' ? '#fff' : '#9ca3af'}
-                  />
-                  <Text
-                    style={{
-                      fontFamily: 'Poppins_600SemiBold',
-                      fontSize: 13,
-                      color: role === 'band' ? '#fff' : '#9ca3af',
-                    }}
-                  >
-                    Banda / Artista
-                  </Text>
-                </TouchableOpacity>
+                    <MaterialCommunityIcons
+                      name={r === 'listener' ? 'account-music' : 'guitar-electric'}
+                      size={18}
+                      color={role === r ? '#fff' : '#9ca3af'}
+                    />
+                    <Text style={{ fontFamily: 'Poppins_600SemiBold', fontSize: 13, color: role === r ? '#fff' : '#9ca3af' }}>
+                      {r === 'listener' ? 'Ouvinte' : 'Banda / Artista'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
 
-              {/* Erro */}
               {error ? (
-                <View className="bg-red-900/50 border border-red-500 rounded-2xl p-4 mb-6">
-                  <Text
-                    className="text-red-300 text-sm text-center"
-                    style={{ fontFamily: 'Poppins_400Regular' }}
-                  >
+                <View style={{ backgroundColor: 'rgba(127,29,29,0.5)', borderWidth: 1, borderColor: '#ef4444', borderRadius: 16, padding: 16, marginBottom: 20 }}>
+                  <Text style={{ fontFamily: 'Poppins_400Regular', color: '#fca5a5', fontSize: 13, textAlign: 'center' }}>
                     {error}
                   </Text>
                 </View>
               ) : null}
 
-              {/* Username */}
-              <View className="mb-7">
-                <TextInput
-                  className="text-white text-base pb-3 border-b border-gray-600"
-                  placeholder={role === 'band' ? 'Username da banda (ex: sepultura)' : 'Username (ex: joao)'}
-                  placeholderTextColor="#9ca3af"
-                  value={form.username}
-                  onChangeText={(t) => setField('username', t)}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={{ fontFamily: 'Poppins_400Regular' }}
-                  editable={!isLoading}
-                />
-              </View>
-
-              {/* Email */}
-              <View className="mb-7">
-                <TextInput
-                  className="text-white text-base pb-3 border-b border-gray-600"
-                  placeholder="Email"
-                  placeholderTextColor="#9ca3af"
-                  value={form.email}
-                  onChangeText={(t) => setField('email', t)}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={{ fontFamily: 'Poppins_400Regular' }}
-                  editable={!isLoading}
-                />
-              </View>
-
-              {/* Senha */}
-              <View className="mb-7">
-                <View className="flex-row items-center border-b border-gray-600">
-                  <TextInput
-                    className="flex-1 text-white text-base pb-3"
-                    placeholder="Senha (mín. 6 caracteres)"
-                    placeholderTextColor="#9ca3af"
-                    value={form.password}
-                    onChangeText={(t) => setField('password', t)}
-                    secureTextEntry={!showPassword}
-                    style={{ fontFamily: 'Poppins_400Regular' }}
-                    editable={!isLoading}
+              <View style={{ alignItems: 'center', marginBottom: 28 }}>
+                <TouchableOpacity onPress={pickAvatar} activeOpacity={0.8}>
+                  <Image
+                    source={{ uri: avatarUri || defaultAvatar }}
+                    style={{ width: 90, height: 90, borderRadius: 45, borderWidth: 2, borderColor: '#dc2626' }}
                   />
-                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} className="pb-3 pl-2">
-                    <MaterialCommunityIcons
-                      name={showPassword ? 'eye-off' : 'eye'}
-                      size={22}
-                      color="#9ca3af"
-                    />
+                  <View style={{ position: 'absolute', bottom: 0, right: 0, backgroundColor: '#dc2626', borderRadius: 12, padding: 4, borderWidth: 2, borderColor: '#0a0a0a' }}>
+                    <MaterialCommunityIcons name="camera" size={14} color="#fff" />
+                  </View>
+                </TouchableOpacity>
+                <Text style={{ fontFamily: 'Poppins_400Regular', color: '#9ca3af', fontSize: 11, marginTop: 6 }}>
+                  Toque para adicionar foto
+                </Text>
+              </View>
+
+              <LineInput {...s}
+                inputRef={nameRef}
+                placeholder={role === 'band' ? 'Nome da banda (ex: Yuri e os Terráqueos)' : 'Seu nome (ex: João Silva)'}
+                value={form.name} onChangeText={(t) => setField('name', t)}
+                editable={!isLoading} returnKeyType="next"
+                onSubmitEditing={() => focusNext(usernameRef)}
+              />
+
+              <LineInput {...s}
+                inputRef={usernameRef}
+                placeholder={role === 'band' ? 'Username da banda (ex: yuriterraqueos)' : 'Username (ex: joaosilva)'}
+                value={form.username} onChangeText={(t) => setField('username', t)}
+                autoCapitalize="none" editable={!isLoading} returnKeyType="next"
+                onSubmitEditing={() => focusNext(emailRef)}
+              />
+
+              <LineInput {...s}
+                inputRef={emailRef}
+                placeholder="Email (ex: contato@banda.com)"
+                value={form.email} onChangeText={(t) => setField('email', t)}
+                keyboardType="email-address" autoCapitalize="none"
+                editable={!isLoading} returnKeyType="next"
+                onSubmitEditing={() => focusNext(passwordRef)}
+              />
+
+              <LineInput {...s}
+                inputRef={passwordRef}
+                placeholder="Senha (mín. 6 caracteres)"
+                value={form.password} onChangeText={(t) => setField('password', t)}
+                secureTextEntry={!showPassword} autoCapitalize="none"
+                editable={!isLoading} returnKeyType="next"
+                onSubmitEditing={() => focusNext(confirmPasswordRef)}
+                rightElement={
+                  <TouchableOpacity onPress={() => setShowPassword(p => !p)} style={{ paddingBottom: 12, paddingLeft: 8 }}>
+                    <MaterialCommunityIcons name={showPassword ? 'eye-off' : 'eye'} size={22} color="#9ca3af" />
                   </TouchableOpacity>
-                </View>
-              </View>
+                }
+              />
 
-              {/* Confirmar senha */}
-              <View className="mb-7">
-                <TextInput
-                  className="text-white text-base pb-3 border-b border-gray-600"
-                  placeholder="Confirmar senha"
-                  placeholderTextColor="#9ca3af"
-                  value={form.confirmPassword}
-                  onChangeText={(t) => setField('confirmPassword', t)}
-                  secureTextEntry={!showPassword}
-                  style={{ fontFamily: 'Poppins_400Regular' }}
-                  editable={!isLoading}
-                />
-              </View>
+              <LineInput {...s}
+                inputRef={confirmPasswordRef}
+                placeholder="Confirmar senha"
+                value={form.confirmPassword} onChangeText={(t) => setField('confirmPassword', t)}
+                secureTextEntry={!showPassword} autoCapitalize="none"
+                editable={!isLoading}
+                returnKeyType={role === 'band' ? 'next' : 'done'}
+                onSubmitEditing={() => role === 'band' ? focusNext(genreRef) : (Keyboard.dismiss(), handleRegister())}
+              />
 
-              {/* Campos extras de BANDA */}
               {role === 'band' && (
-                <View className="border-t border-gray-700 pt-6 mb-2">
-                  <Text
-                    className="text-gray-400 text-xs mb-5 uppercase tracking-widest"
-                    style={{ fontFamily: 'Poppins_600SemiBold' }}
-                  >
+                <View style={{ borderTopWidth: 1, borderTopColor: '#374151', paddingTop: 20, marginBottom: 8 }}>
+                  <Text style={{ fontFamily: 'Poppins_600SemiBold', color: '#6b7280', fontSize: 11, marginBottom: 20, letterSpacing: 2, textTransform: 'uppercase' }}>
                     Informações da Banda
                   </Text>
 
-                  <View className="mb-7">
-                    <TextInput
-                      className="text-white text-base pb-3 border-b border-gray-600"
-                      placeholder="Gênero musical (ex: Metal, Punk, Rock)"
-                      placeholderTextColor="#9ca3af"
-                      value={form.genre}
-                      onChangeText={(t) => setField('genre', t)}
-                      style={{ fontFamily: 'Poppins_400Regular' }}
-                      editable={!isLoading}
-                    />
-                  </View>
+                  <LineInput {...s}
+                    inputRef={genreRef}
+                    placeholder="Gênero musical (ex: Metal, Punk, Rock)"
+                    value={form.genre} onChangeText={(t) => setField('genre', t)}
+                    editable={!isLoading} returnKeyType="next"
+                    onSubmitEditing={() => focusNext(cityRef)}
+                  />
 
-                  <View className="mb-7">
-                    <TextInput
-                      className="text-white text-base pb-3 border-b border-gray-600"
-                      placeholder="Cidade (ex: São Paulo, SP)"
-                      placeholderTextColor="#9ca3af"
-                      value={form.city}
-                      onChangeText={(t) => setField('city', t)}
-                      style={{ fontFamily: 'Poppins_400Regular' }}
-                      editable={!isLoading}
-                    />
-                  </View>
+                  <LineInput {...s}
+                    inputRef={cityRef}
+                    placeholder="Cidade (ex: São Paulo, SP)"
+                    value={form.city} onChangeText={(t) => setField('city', t)}
+                    editable={!isLoading} returnKeyType="next"
+                    onSubmitEditing={() => focusNext(bioRef)}
+                  />
 
-                  <View className="mb-7">
-                    <TextInput
-                      className="text-white text-base pb-3 border-b border-gray-600"
-                      placeholder="Bio da banda (opcional)"
-                      placeholderTextColor="#9ca3af"
-                      value={form.bio}
-                      onChangeText={(t) => setField('bio', t)}
-                      multiline
-                      numberOfLines={3}
-                      style={{ fontFamily: 'Poppins_400Regular' }}
-                      editable={!isLoading}
-                    />
-                  </View>
+                  <LineInput {...s}
+                    inputRef={bioRef}
+                    placeholder="Bio da banda (opcional)"
+                    value={form.bio} onChangeText={(t) => setField('bio', t)}
+                    multiline numberOfLines={3}
+                    editable={!isLoading} returnKeyType="next"
+                    onSubmitEditing={() => focusNext(instagramRef)}
+                  />
+
+                  <Text style={{ fontFamily: 'Poppins_600SemiBold', color: '#6b7280', fontSize: 11, marginBottom: 20, letterSpacing: 2, textTransform: 'uppercase' }}>
+                    Redes Sociais (opcional)
+                  </Text>
+
+                  <LineInput {...s}
+                    inputRef={instagramRef}
+                    placeholder="Instagram (@handle)"
+                    value={form.instagram} onChangeText={(t) => setField('instagram', t)}
+                    autoCapitalize="none" editable={!isLoading} returnKeyType="next"
+                    onSubmitEditing={() => focusNext(spotifyRef)}
+                  />
+
+                  <LineInput {...s}
+                    inputRef={spotifyRef}
+                    placeholder="Spotify (link ou @handle)"
+                    value={form.spotify} onChangeText={(t) => setField('spotify', t)}
+                    autoCapitalize="none" editable={!isLoading} returnKeyType="next"
+                    onSubmitEditing={() => focusNext(youtubeRef)}
+                  />
+
+                  <LineInput {...s}
+                    inputRef={youtubeRef}
+                    placeholder="YouTube (@handle)"
+                    value={form.youtube} onChangeText={(t) => setField('youtube', t)}
+                    autoCapitalize="none" editable={!isLoading} returnKeyType="done"
+                    onSubmitEditing={() => { Keyboard.dismiss(); handleRegister(); }}
+                  />
                 </View>
               )}
 
-              {/* Botão registrar */}
               <TouchableOpacity
                 activeOpacity={0.85}
-                className="bg-red-600 rounded-full px-8 py-4 items-center mb-4 shadow-md"
+                style={{
+                  backgroundColor: '#dc2626',
+                  borderRadius: 50,
+                  paddingVertical: 16,
+                  alignItems: 'center',
+                  marginBottom: 12,
+                  opacity: isLoading ? 0.6 : 1,
+                  marginTop: role === 'band' ? 10 : 0,
+                }}
                 onPress={handleRegister}
                 disabled={isLoading}
-                style={{ opacity: isLoading ? 0.6 : 1 }}
               >
-                {isLoading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text
-                    className="text-white text-lg"
-                    style={{ fontFamily: 'Poppins_700Bold' }}
-                  >
-                    CRIAR CONTA
-                  </Text>
-                )}
+                {isLoading
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={{ fontFamily: 'Poppins_700Bold', color: '#fff', fontSize: 16 }}>CRIAR CONTA</Text>
+                }
               </TouchableOpacity>
 
               <TouchableOpacity
                 activeOpacity={0.85}
-                className="border border-red-600 rounded-full px-8 py-4 items-center"
+                style={{
+                  borderWidth: 1,
+                  borderColor: '#dc2626',
+                  borderRadius: 50,
+                  paddingVertical: 16,
+                  alignItems: 'center',
+                  marginBottom: Platform.OS === 'ios' ? 20 : 10,
+                }}
                 onPress={() => navigation.goBack()}
                 disabled={isLoading}
               >
-                <Text
-                  className="text-red-400 text-lg"
-                  style={{ fontFamily: 'Poppins_700Bold' }}
-                >
-                  VOLTAR AO LOGIN
-                </Text>
+                <Text style={{ fontFamily: 'Poppins_700Bold', color: '#f87171', fontSize: 16 }}>VOLTAR AO LOGIN</Text>
               </TouchableOpacity>
-            </View>
-          </Animated.View>
 
-          <View style={{ height: insets.bottom + 20 }} />
+            </Animated.View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>

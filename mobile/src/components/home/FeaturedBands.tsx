@@ -10,7 +10,7 @@ interface FeaturedBandsProps {
 }
 
 export const FeaturedBands: React.FC<FeaturedBandsProps> = ({ opacity, translateY }) => {
-  const { artists, getTracksByArtist, playTrack, loading } = useMusicData();
+  const { artists, getTracksByArtist, playTrack } = useMusicData();
 
   const handlePlayBand = (artist: Artist) => {
     const artistTracks = getTracksByArtist(artist._id);
@@ -40,22 +40,6 @@ export const FeaturedBands: React.FC<FeaturedBandsProps> = ({ opacity, translate
     }
     return `${minutes} min`;
   };
-
-  if (loading) {
-    return (
-      <Animated.View style={{ opacity, transform: [{ translateY }] }} className="px-6 mb-6">
-        <Text className="text-white text-xl mb-4" style={{ fontFamily: 'Poppins_700Bold' }}>
-          Artistas em Destaque
-        </Text>
-        <View className="bg-white/5 rounded-2xl p-8 items-center justify-center">
-          <MaterialCommunityIcons name="music" size={40} color="#666" />
-          <Text className="text-gray-400 mt-2 text-center">
-            Carregando artistas...
-          </Text>
-        </View>
-      </Animated.View>
-    );
-  }
 
   if (artists.length === 0) {
     return (

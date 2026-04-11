@@ -19,24 +19,41 @@ trim:true,
 minlength:3
 },
 
+// Nome de exibição (ouvintes e bandas)
+name:{
+type:String,
+trim:true,
+default:""
+},
+
 password:{
 type:String,
 required:true,
 select:false
 },
 
-// "listener" = ouvinte comum | "band" = banda/artista independente
-// demais roles originais mantidos
 role:{
 type:String,
 enum:["listener","artist","band","label","admin"],
 default:"listener"
 },
 
+// Referência ao documento Artist (preenchido quando role === "band" | "artist")
+artistId:{
+type:mongoose.Schema.Types.ObjectId,
+ref:"Artist"
+},
+
 artistProfile:{
 type:mongoose.Schema.Types.ObjectId,
 ref:"ArtistProfile"
 },
+
+// Tracks que o usuário curtiu
+likedTracks:[{
+type:mongoose.Schema.Types.ObjectId,
+ref:"Track"
+}],
 
 // Campos exclusivos de banda/artista independente
 bandInfo:{

@@ -1,5 +1,5 @@
 // src/components/player/MiniPlayer.tsx
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { View, Text, TouchableOpacity, Image, Animated, PanResponder } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -11,15 +11,15 @@ type MiniPlayerNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export const MiniPlayer: React.FC = () => {
   const navigation = useNavigation<MiniPlayerNavigationProp>();
-  
-  const { 
-    currentTrack, 
-    isPlaying, 
+
+  const {
+    currentTrack,
+    isPlaying,
     position,
     duration,
     togglePlayPause,
     playNext,
-    playPrevious 
+    playPrevious,
   } = useMusicData();
 
   const panY = useRef(new Animated.Value(0)).current;
@@ -27,152 +27,69 @@ export const MiniPlayer: React.FC = () => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const opacityAnim = useRef(new Animated.Value(1)).current;
 
-  // PanResponder para swipe down (minimizar)
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderMove: (_, gestureState) => {
         if (gestureState.dy > 0) {
           panY.setValue(gestureState.dy);
-          // Opacidade diminui conforme arrasta para baixo
           opacityAnim.setValue(Math.max(0.5, 1 - gestureState.dy / 300));
         }
       },
       onPanResponderRelease: (_, gestureState) => {
         if (gestureState.dy > 100) {
-          // Fecha com animação
           Animated.parallel([
-            Animated.timing(panY, {
-              toValue: 300,
-              duration: 250,
-              useNativeDriver: true,
-            }),
-            Animated.timing(opacityAnim, {
-              toValue: 0,
-              duration: 200,
-              useNativeDriver: true,
-            }),
+            Animated.timing(panY, { toValue: 300, duration: 250, useNativeDriver: true }),
+            Animated.timing(opacityAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
           ]).start(() => {
-            if (navigation.canGoBack()) {
-              navigation.goBack();
-            }
-            // Reset valores
+            if (navigation.canGoBack()) navigation.goBack();
             panY.setValue(0);
             opacityAnim.setValue(1);
           });
         } else {
-          // Voltar à posição original
           Animated.parallel([
-            Animated.spring(panY, {
-              toValue: 0,
-              useNativeDriver: true,
-            }),
-            Animated.spring(opacityAnim, {
-              toValue: 1,
-              useNativeDriver: true,
-            }),
+            Animated.spring(panY, { toValue: 0, useNativeDriver: true }),
+            Animated.spring(opacityAnim, { toValue: 1, useNativeDriver: true }),
           ]).start();
         }
       },
     })
   ).current;
 
-  const handleOpenPlayer = useCallback(() => {
-    console.log('🎯 Abrindo tela do player...');
-    
-    // Animação de clique
+  const tapFeedback = useCallback(() => {
     Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 0.98,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
+      Animated.timing(scaleAnim, { toValue: 0.98, duration: 80, useNativeDriver: true }),
+      Animated.timing(scaleAnim, { toValue: 1, duration: 80, useNativeDriver: true }),
     ]).start();
-    
-    // Navega com transição personalizada
+  }, [scaleAnim]);
+
+  const handleOpenPlayer = useCallback(() => {
+    tapFeedback();
     navigation.navigate('Player');
-  }, [navigation]);
+  }, [navigation, tapFeedback]);
 
   const handlePlayPause = useCallback(async () => {
-    try {
-      const now = Date.now();
-      if (now - lastTap.current < 300) return;
-      lastTap.current = now;
-      
-      // Feedback visual
-      Animated.sequence([
-        Animated.timing(scaleAnim, {
-          toValue: 0.95,
-          duration: 50,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 50,
-          useNativeDriver: true,
-        }),
-      ]).start();
-      
-      await togglePlayPause();
-    } catch (error) {
-      console.error('❌ Erro no togglePlayPause:', error);
-    }
-  }, [togglePlayPause]);
+    const now = Date.now();
+    if (now - lastTap.current < 300) return;
+    lastTap.current = now;
+    tapFeedback();
+    try { await togglePlayPause(); } catch (e) { console.error('❌', e); }
+  }, [togglePlayPause, tapFeedback]);
 
   const handleNext = useCallback(async () => {
-    try {
-      // Feedback visual
-      Animated.sequence([
-        Animated.timing(scaleAnim, {
-          toValue: 0.95,
-          duration: 50,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 50,
-          useNativeDriver: true,
-        }),
-      ]).start();
-      
-      await playNext();
-    } catch (error) {
-      console.error('❌ Erro no playNext:', error);
-    }
-  }, [playNext]);
+    tapFeedback();
+    try { await playNext(); } catch (e) { console.error('❌', e); }
+  }, [playNext, tapFeedback]);
 
   const handlePrevious = useCallback(async () => {
-    try {
-      // Feedback visual
-      Animated.sequence([
-        Animated.timing(scaleAnim, {
-          toValue: 0.95,
-          duration: 50,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 50,
-          useNativeDriver: true,
-        }),
-      ]).start();
-      
-      await playPrevious();
-    } catch (error) {
-      console.error('❌ Erro no playPrevious:', error);
-    }
-  }, [playPrevious]);
+    tapFeedback();
+    try { await playPrevious(); } catch (e) { console.error('❌', e); }
+  }, [playPrevious, tapFeedback]);
 
+  // Se não há track, retorna null mas reserva zero espaço (sem alterar layout do BottomNav)
   if (!currentTrack) return null;
 
-  const progressPercentage = duration > 0
-    ? Math.min((position / duration) * 100, 100)
-    : 0;
+  const progressPercentage = duration > 0 ? Math.min((position / duration) * 100, 100) : 0;
 
   const formatTime = (seconds: number) => {
     if (!seconds || isNaN(seconds) || seconds < 0) return '0:00';
@@ -181,128 +98,116 @@ export const MiniPlayer: React.FC = () => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const imageSource = { 
-    uri: currentTrack.album?.cover || 
-         currentTrack.coverUrl || 
-         'https://via.placeholder.com/150/1a1a1a/ffffff?text=Cover' 
+  const imageSource = {
+    uri:
+      currentTrack.album?.cover ||
+      currentTrack.coverUrl ||
+      'https://via.placeholder.com/150/1a1a1a/ffffff?text=Cover',
   };
 
   return (
+    // ✅ SEM position:absolute — fica no fluxo normal, empilhado acima do BottomNavigation
     <Animated.View
       style={{
-        transform: [
-          { translateY: panY },
-          { scale: scaleAnim }
-        ],
+        transform: [{ translateY: panY }, { scale: scaleAnim }],
         opacity: opacityAnim,
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        zIndex: 9999,
-        elevation: 50,
       }}
       {...panResponder.panHandlers}
     >
       <TouchableOpacity
         onPress={handleOpenPlayer}
         activeOpacity={0.9}
-        className="bg-black/95 border-t border-white/10"
+        style={{
+          backgroundColor: 'rgba(10,10,10,0.97)',
+          borderTopWidth: 1,
+          borderTopColor: 'rgba(255,255,255,0.1)',
+        }}
       >
-        {/* Barra de Progresso com animação */}
-        <View className="w-full h-1 bg-white/20">
-          <Animated.View
-            className="h-full bg-red-600"
-            style={{ 
+        {/* Barra de progresso */}
+        <View style={{ width: '100%', height: 2, backgroundColor: 'rgba(255,255,255,0.15)' }}>
+          <View
+            style={{
+              height: '100%',
               width: `${progressPercentage}%`,
-              transform: [{ scaleY: scaleAnim }]
+              backgroundColor: '#dc2626',
             }}
           />
         </View>
 
-        {/* Conteúdo */}
-        <View className="flex-row items-center justify-between px-4 py-3">
-          <View className="flex-row items-center flex-1 mr-4">
+        {/* Conteúdo principal */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+          }}
+        >
+          {/* Capa + título + artista */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 }}>
             <Animated.Image
               source={imageSource}
-              className="w-12 h-12 rounded-md mr-3"
-              resizeMode="cover"
-              defaultSource={{ uri: 'https://via.placeholder.com/150/1a1a1a/ffffff?text=Cover' }}
               style={{
-                transform: [{ scale: scaleAnim }]
+                width: 44,
+                height: 44,
+                borderRadius: 6,
+                marginRight: 12,
+                transform: [{ scale: scaleAnim }],
               }}
+              resizeMode="cover"
             />
-
-            <View className="flex-1">
-              <Animated.Text 
-                className="text-white text-sm font-semibold" 
+            <View style={{ flex: 1 }}>
+              <Text
                 numberOfLines={1}
-                style={{
-                  transform: [{ scale: scaleAnim }]
-                }}
+                style={{ color: '#fff', fontSize: 13, fontFamily: 'Poppins_600SemiBold' }}
               >
                 {currentTrack.title || 'Título Desconhecido'}
-              </Animated.Text>
-              <Animated.Text 
-                className="text-gray-400 text-xs" 
+              </Text>
+              <Text
                 numberOfLines={1}
-                style={{
-                  transform: [{ scale: scaleAnim }]
-                }}
+                style={{ color: '#9ca3af', fontSize: 11, fontFamily: 'Poppins_400Regular' }}
               >
-                {currentTrack.artists?.map(a => a.name).join(', ') || 'Artista Desconhecido'}
-              </Animated.Text>
+                {currentTrack.artists?.map((a: any) => a.name).join(', ') || 'Artista Desconhecido'}
+              </Text>
             </View>
           </View>
 
-          <View className="flex-row items-center">
-            <TouchableOpacity 
-              onPress={handlePrevious} 
-              className="p-2"
+          {/* Controles */}
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity
+              onPress={handlePrevious}
+              style={{ padding: 8 }}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <MaterialCommunityIcons 
-                name="skip-previous" 
-                size={24} 
-                color="#f87171"
-              />
+              <MaterialCommunityIcons name="skip-previous" size={26} color="#f87171" />
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              onPress={handlePlayPause} 
-              className="bg-red-600 rounded-full p-2 mx-2"
+            <TouchableOpacity
+              onPress={handlePlayPause}
+              style={{
+                backgroundColor: '#dc2626',
+                borderRadius: 20,
+                padding: 8,
+                marginHorizontal: 6,
+              }}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <MaterialCommunityIcons
                 name={isPlaying ? 'pause' : 'play'}
-                size={18}
+                size={20}
                 color="white"
               />
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              onPress={handleNext} 
-              className="p-2"
+            <TouchableOpacity
+              onPress={handleNext}
+              style={{ padding: 8 }}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <MaterialCommunityIcons 
-                name="skip-next" 
-                size={24} 
-                color="#f87171"
-              />
+              <MaterialCommunityIcons name="skip-next" size={26} color="#f87171" />
             </TouchableOpacity>
           </View>
-        </View>
-
-        <View className="px-4 pb-2">
-          <Animated.Text 
-            className="text-gray-400 text-xs text-right"
-            style={{
-              transform: [{ scale: scaleAnim }]
-            }}
-          >
-            {formatTime(position)} / {formatTime(duration)}
-          </Animated.Text>
         </View>
       </TouchableOpacity>
     </Animated.View>

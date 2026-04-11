@@ -1,18 +1,18 @@
 // src/screens/LoginScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StatusBar,
-  ScrollView,
   Animated,
   Easing,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigation';
@@ -23,18 +23,21 @@ import { useAuthStore } from '../store/authStore';
 
 type LoginScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
 export default function LoginScreen() {
   const navigation = useNavigation<LoginScreenNavigationProp>();
-  // ✅ isAuthenticated removido — não é mais usado aqui
   const { login, isLoading, error, clearError } = useAuthStore();
   const insets = useSafeAreaInsets();
+  const passwordRef = useRef<TextInput>(null);
+  const scrollViewRef = useRef<KeyboardAwareScrollView>(null);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  const translateY = React.useRef(new Animated.Value(20)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(20)).current;
 
   React.useEffect(() => {
     Animated.parallel([
@@ -53,160 +56,183 @@ export default function LoginScreen() {
     ]).start();
   }, []);
 
-  // ✅ REMOVIDO: useEffect que escutava isAuthenticated e navegava na montagem
-  // Isso causava navegação prematura quando o componente montava com sessão ativa
+  const isFormValid = email.trim().length > 0 && password.trim().length > 0;
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) return;
+    if (!isFormValid) return;
+
+    if (!EMAIL_REGEX.test(email.trim())) {
+      useAuthStore.setState({ error: 'Email inválido (ex: nome@dominio.com)' });
+      return;
+    }
+
     clearError();
     try {
       await login(email.trim(), password);
-      // ✅ Navega aqui, após o await confirmar sucesso
       navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
     } catch {
-      // erro já está no store, não navega
+      // erro já está no store
     }
+  };
+
+  const handleEmailSubmit = () => {
+    passwordRef.current?.focus();
+  };
+
+  const handlePasswordSubmit = () => {
+    Keyboard.dismiss();
+    handleLogin();
   };
 
   return (
     <LinearGradient
       colors={['#dc2626', '#7f1d1d', '#0a0a0a']}
       locations={[0, 0.12, 1]}
-      className="flex-1"
+      style={{ flex: 1 }}
     >
-      <StatusBar translucent backgroundColor="transparent" />
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+
+      <KeyboardAwareScrollView
+        ref={scrollViewRef}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ 
+          flexGrow: 1, 
+          paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+        }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        enableOnAndroid={true}
+        enableAutomaticScroll={true}
+        extraScrollHeight={Platform.OS === 'ios' ? 40 : 20}
+        extraHeight={Platform.OS === 'ios' ? 40 : 20}
+        keyboardOpeningTime={0}
+        bounces={false}
+        scrollToOverflowEnabled={true}
       >
-        <ScrollView
-          className="flex-1"
-          contentContainerStyle={{ flexGrow: 1 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+        <View style={{ paddingTop: insets.top + 40, paddingHorizontal: 24 }}>
           {/* Header */}
-          <View className="px-6 items-center" style={{ paddingTop: insets.top + 40 }}>
-            <View className="flex-row items-center justify-center mb-4">
+          <View style={{ alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
               <TouchableOpacity
                 onPress={() => navigation.goBack()}
-                className="absolute left-0 p-2"
+                style={{ position: 'absolute', left: 0, padding: 8 }}
               >
                 <MaterialCommunityIcons name="arrow-left" size={28} color="#f87171" />
               </TouchableOpacity>
               <MaterialCommunityIcons name="music-note" size={40} color="#f87171" />
             </View>
-            <Text
-              className="text-3xl text-white text-center mb-2"
-              style={{ fontFamily: 'Poppins_700Bold' }}
-            >
+            <Text style={{ fontFamily: 'Poppins_700Bold', fontSize: 28, color: '#fff', textAlign: 'center', marginBottom: 6 }}>
               BEM-VINDO
             </Text>
-            <Text
-              className="text-base text-gray-200 text-center"
-              style={{ fontFamily: 'Poppins_400Regular' }}
-            >
+            <Text style={{ fontFamily: 'Poppins_400Regular', fontSize: 14, color: '#e5e7eb', textAlign: 'center' }}>
               Entre na revolução musical
             </Text>
           </View>
 
           <Animated.View
-            className="flex-1 justify-center px-6 mt-10"
-            style={{ opacity: fadeAnim, transform: [{ translateY }] }}
+            style={{
+              marginTop: 40,
+              opacity: fadeAnim,
+              transform: [{ translateY }],
+            }}
           >
-            <View className="rounded-3xl p-6">
-
-              {/* Erro da API */}
-              {error ? (
-                <View className="bg-red-900/50 border border-red-500 rounded-2xl p-4 mb-6">
-                  <Text
-                    className="text-red-300 text-sm text-center"
-                    style={{ fontFamily: 'Poppins_400Regular' }}
-                  >
-                    {error}
-                  </Text>
-                </View>
-              ) : null}
-
-              {/* Email */}
-              <View className="mb-8">
-                <TextInput
-                  className="text-white text-lg pb-3 border-b border-gray-600"
-                  placeholder="Email"
-                  placeholderTextColor="#9ca3af"
-                  value={email}
-                  onChangeText={(t) => { setEmail(t); clearError(); }}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={{ fontFamily: 'Poppins_400Regular' }}
-                  editable={!isLoading}
-                />
-              </View>
-
-              {/* Senha */}
-              <View className="mb-10">
-                <View className="flex-row items-center border-b border-gray-600">
-                  <TextInput
-                    className="flex-1 text-white text-lg pb-3"
-                    placeholder="Senha"
-                    placeholderTextColor="#9ca3af"
-                    value={password}
-                    onChangeText={(t) => { setPassword(t); clearError(); }}
-                    secureTextEntry={!showPassword}
-                    style={{ fontFamily: 'Poppins_400Regular' }}
-                    editable={!isLoading}
-                  />
-                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} className="pb-3 pl-2">
-                    <MaterialCommunityIcons
-                      name={showPassword ? 'eye-off' : 'eye'}
-                      size={22}
-                      color="#9ca3af"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Botão Login */}
-              <TouchableOpacity
-                activeOpacity={0.85}
-                className="bg-red-600 rounded-full px-8 py-4 items-center mb-4 shadow-md"
-                onPress={handleLogin}
-                disabled={isLoading || !email.trim() || !password.trim()}
-                style={{ opacity: isLoading || !email.trim() || !password.trim() ? 0.6 : 1 }}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text
-                    className="text-white text-lg"
-                    style={{ fontFamily: 'Poppins_700Bold' }}
-                  >
-                    ENTRAR
-                  </Text>
-                )}
-              </TouchableOpacity>
-
-              {/* Ir para Register */}
-              <TouchableOpacity
-                activeOpacity={0.85}
-                className="border border-red-600 rounded-full px-8 py-4 items-center"
-                onPress={() => navigation.navigate('Register')}
-                disabled={isLoading}
-              >
-                <Text
-                  className="text-red-400 text-lg"
-                  style={{ fontFamily: 'Poppins_700Bold' }}
-                >
-                  CRIAR CONTA
+            {/* Erro da API */}
+            {error ? (
+              <View style={{ backgroundColor: 'rgba(127,29,29,0.5)', borderWidth: 1, borderColor: '#ef4444', borderRadius: 16, padding: 16, marginBottom: 24 }}>
+                <Text style={{ fontFamily: 'Poppins_400Regular', color: '#fca5a5', fontSize: 13, textAlign: 'center' }}>
+                  {error}
                 </Text>
+              </View>
+            ) : null}
+
+            {/* Email */}
+            <View style={{ borderBottomWidth: 1, borderBottomColor: '#4b5563', marginBottom: 32 }}>
+              <TextInput
+                style={{ fontFamily: 'Poppins_400Regular', color: '#fff', fontSize: 16, paddingBottom: 12 }}
+                placeholder="Email"
+                placeholderTextColor="#9ca3af"
+                value={email}
+                onChangeText={(t) => { setEmail(t); clearError(); }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isLoading}
+                returnKeyType="next"
+                onSubmitEditing={handleEmailSubmit}
+                blurOnSubmit={false}
+              />
+            </View>
+
+            {/* Senha */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#4b5563', marginBottom: 40 }}>
+              <TextInput
+                ref={passwordRef}
+                style={{ flex: 1, fontFamily: 'Poppins_400Regular', color: '#fff', fontSize: 16, paddingBottom: 12 }}
+                placeholder="Senha"
+                placeholderTextColor="#9ca3af"
+                value={password}
+                onChangeText={(t) => { setPassword(t); clearError(); }}
+                secureTextEntry={!showPassword}
+                editable={!isLoading}
+                returnKeyType="done"
+                onSubmitEditing={handlePasswordSubmit}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                style={{ paddingBottom: 12, paddingLeft: 8 }}
+              >
+                <MaterialCommunityIcons
+                  name={showPassword ? 'eye-off' : 'eye'}
+                  size={22}
+                  color="#9ca3af"
+                />
               </TouchableOpacity>
             </View>
-          </Animated.View>
 
-          <View style={{ height: insets.bottom + 20 }} />
-        </ScrollView>
-      </KeyboardAvoidingView>
+            {/* Botão Login */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={{
+                backgroundColor: '#dc2626',
+                borderRadius: 50,
+                paddingVertical: 16,
+                alignItems: 'center',
+                marginBottom: 12,
+                opacity: isLoading || !isFormValid ? 0.6 : 1,
+              }}
+              onPress={handleLogin}
+              disabled={isLoading || !isFormValid}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={{ fontFamily: 'Poppins_700Bold', color: '#fff', fontSize: 16 }}>
+                  ENTRAR
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Ir para Register */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={{
+                borderWidth: 1,
+                borderColor: '#dc2626',
+                borderRadius: 50,
+                paddingVertical: 16,
+                alignItems: 'center',
+                marginBottom: Platform.OS === 'ios' ? 20 : 10,
+              }}
+              onPress={() => navigation.navigate('Register')}
+              disabled={isLoading}
+            >
+              <Text style={{ fontFamily: 'Poppins_700Bold', color: '#f87171', fontSize: 16 }}>
+                CRIAR CONTA
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      </KeyboardAwareScrollView>
     </LinearGradient>
   );
 }

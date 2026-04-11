@@ -15,7 +15,7 @@ ref:"User"
 
 followingArtist:{
 type:mongoose.Schema.Types.ObjectId,
-ref:"ArtistProfile"
+ref:"Artist"
 }
 
 },{timestamps:true});
