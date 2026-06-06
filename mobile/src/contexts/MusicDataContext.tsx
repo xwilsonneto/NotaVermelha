@@ -1,40 +1,29 @@
 // src/contexts/MusicDataContext.tsx
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Audio } from 'expo-av';
-import { trackService, artistService, albumService, testConnection, ApiResponse, Track as ApiTrack } from '../services/api';
-import { usePlayerStore } from '../store/playerStore';
+import { trackService, artistService, albumService, testConnection } from '../services/api';
+import { useAuthStore } from '../store/authStore';
 
-export interface Artist {
-  _id: string;
-  name: string;
-  avatar: string;
-  genre?: string[];
-  monthlyListeners?: number;
-  verified?: boolean;
-}
+// Re-export shared types so importers don't need to change
+export type { Artist, Album, Track } from './MusicPlayerContext';
+import type { Artist, Album, Track } from './MusicPlayerContext';
 
-export interface Album {
+export interface FeedItem {
   _id: string;
-  title: string;
-  cover: string;
-  releaseDate?: string;
-  genre?: string[];
-  likeCount?: number;
-}
-
-export interface Track {
-  _id: string;
-  title: string;
-  artists: Artist[];
-  album: Album;
-  duration: number;
-  audioUrl: string;
-  coverUrl: string;
-  playCount: number;
-  likeCount: number;
-  releaseDate: string;
-  genre: string[];
-  trackNumber: number;
+  type: 'track_release' | 'album_release' | 'playlist_created' | 'user_follow' | 'track_like';
+  actorUser?: {
+    _id: string;
+    username: string;
+    name: string;
+    avatar: string;
+  };
+  actorArtist?: Artist;
+  targetTrack?: Track;
+  targetAlbum?: Album;
+  targetPlaylist?: any;
+  targetUser?: any;
+  createdAt: string;
+  message?: string;
 }
 
 interface MusicDataContextValue {
@@ -44,16 +33,15 @@ interface MusicDataContextValue {
   loading: boolean;
   error: string | null;
   listeningHistory: Track[];
-  currentTrack: Track | null;
-  isPlaying: boolean;
-  position: number;
-  duration: number;
-  playTrack: (track: Track) => Promise<void>;
-  pauseTrack: () => Promise<void>;
-  resumeTrack: () => Promise<void>;
-  togglePlayPause: () => Promise<void>;
-  playNext: () => Promise<void>;
-  playPrevious: () => Promise<void>;
+
+  feedItems: FeedItem[];
+  hasMoreFeed: boolean;
+  feedLoading: boolean;
+  loadMoreFeed: () => Promise<void>;
+
+  /** Notify data context that a track was played (updates history & playCount) */
+  onTrackPlayed: (track: Track) => void;
+
   getPopularTracks: (limit?: number) => Track[];
   getRecentTracks: (limit?: number) => Track[];
   searchTracks: (query: string) => Track[];
@@ -62,15 +50,23 @@ interface MusicDataContextValue {
   getTracksByAlbum: (albumId: string) => Track[];
   getFeaturedBands: (limit?: number) => Artist[];
   refresh: () => Promise<void>;
-  testConnection: () => Promise<boolean>;
-  seekTo: (seconds: number) => Promise<void>;
-  // ─── Social ───────────────────────────────────────────────────────────────
+  testApiConnection: () => Promise<boolean>;
+
+  // Social — Artistas
   followArtist: (artistId: string) => Promise<void>;
   unfollowArtist: (artistId: string) => Promise<void>;
   checkFollowingArtist: (artistId: string) => Promise<boolean>;
+
+  // Social — Álbuns
   likeAlbum: (albumId: string) => Promise<void>;
   unlikeAlbum: (albumId: string) => Promise<void>;
   checkAlbumLiked: (albumId: string) => Promise<boolean>;
+
+  // Social — Tracks
+  likedTrackIds: Set<string>;
+  likeTrack: (trackId: string) => Promise<void>;
+  unlikeTrack: (trackId: string) => Promise<void>;
+  isTrackLiked: (trackId: string) => boolean;
 }
 
 const MusicDataContext = createContext<MusicDataContextValue | null>(null);
@@ -83,259 +79,156 @@ export const MusicDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [error, setError] = useState<string | null>(null);
   const [listeningHistory, setListeningHistory] = useState<Track[]>([]);
 
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const isLoadedRef = useRef<boolean>(false);
+  // Liked track IDs — ref for mutations, state for renders
+  const likedTrackIdsRef = useRef<Set<string>>(new Set());
+  const [likedTrackIds, setLikedTrackIds] = useState<Set<string>>(new Set());
+
+  const syncLikedSet = useCallback((fn: (prev: Set<string>) => Set<string>) => {
+    likedTrackIdsRef.current = fn(likedTrackIdsRef.current);
+    setLikedTrackIds(new Set(likedTrackIdsRef.current));
+  }, []);
+
+  const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
+  const [hasMoreFeed, setHasMoreFeed] = useState<boolean>(true);
+  const [feedLoading, setFeedLoading] = useState<boolean>(false);
+  const feedCursorRef = useRef<string | null>(null);
+
   const isLoadingRef = useRef<boolean>(false);
   const hasLoadedRef = useRef<boolean>(false);
-  const isPlaybackFinishedRef = useRef<boolean>(false);
-
-  const playerStore = usePlayerStore();
-
-  const setPositionRef = useRef(playerStore.setPosition);
-  setPositionRef.current = playerStore.setPosition;
-  const setIsPlayingRef = useRef(playerStore.setIsPlaying);
-  setIsPlayingRef.current = playerStore.setIsPlaying;
-  const setCurrentTrackRef = useRef(playerStore.setCurrentTrack);
-  setCurrentTrackRef.current = playerStore.setCurrentTrack;
 
   const tracksRef = useRef<Track[]>(tracks);
   tracksRef.current = tracks;
-  const currentTrackRef = useRef(playerStore.currentTrack);
-  currentTrackRef.current = playerStore.currentTrack;
-  const isPlayingRef = useRef(playerStore.isPlaying);
-  isPlayingRef.current = playerStore.isPlaying;
-  const positionRef = useRef(playerStore.position);
-  positionRef.current = playerStore.position;
 
-  const testAPIConnection = useCallback(async (): Promise<boolean> => {
+  const { token } = useAuthStore();
+
+  // ── Audio setup (only once) ──────────────────────────────────────────────
+  useEffect(() => {
+    Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      staysActiveInBackground: true,
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+    }).catch(err => console.warn('⚠️ Erro ao configurar áudio:', err));
+  }, []);
+
+  // ── Connection test ──────────────────────────────────────────────────────
+  const testApiConnection = useCallback(async (): Promise<boolean> => {
     try {
-      const isConnected = await testConnection();
-      if (!isConnected) setError('API não está acessível. Verifique se o backend está rodando.');
-      return isConnected;
-    } catch (err) {
+      const ok = await testConnection();
+      if (!ok) setError('API não está acessível. Verifique se o backend está rodando.');
+      return ok;
+    } catch {
       setError('Não foi possível conectar à API. Verifique a rede.');
       return false;
     }
   }, []);
 
-  const loadAllData = useCallback(async (): Promise<void> => {
-    if (isLoadingRef.current) return;
-    if (hasLoadedRef.current) return;
+  // ── Feed ─────────────────────────────────────────────────────────────────
+  const feedLoadingRef = useRef(feedLoading);
+  feedLoadingRef.current = feedLoading;
 
+  const loadFeed = useCallback(async (cursor: string | null = null, isLoadMore = false) => {
+    if (feedLoadingRef.current || !token) return;
+    setFeedLoading(true);
     try {
-      isLoadingRef.current = true;
-      setLoading(true);
-      setError(null);
+      const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api';
+      const url = cursor
+        ? `${API_URL}/feed/cursor?cursor=${cursor}&limit=20`
+        : `${API_URL}/feed/cursor?limit=20`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      const result = await res.json();
+      if (result.success && result.data) {
+        setFeedItems(prev => (isLoadMore ? [...prev, ...result.data] : result.data));
+        setHasMoreFeed(result.hasMore ?? false);
+        feedCursorRef.current = result.nextCursor ?? null;
+      }
+    } catch (err) {
+      console.error('Erro ao carregar feed:', err);
+    } finally {
+      setFeedLoading(false);
+    }
+  }, [token]);
 
-      const isConnected = await testAPIConnection();
-      if (!isConnected) return;
+  const hasMoreFeedRef = useRef(hasMoreFeed);
+  hasMoreFeedRef.current = hasMoreFeed;
+
+  const loadMoreFeed = useCallback(async () => {
+    if (!hasMoreFeedRef.current || feedLoadingRef.current) return;
+    await loadFeed(feedCursorRef.current, true);
+  }, [loadFeed]);
+
+  // ── Catalog ──────────────────────────────────────────────────────────────
+  const loadAllData = useCallback(async (): Promise<void> => {
+    if (isLoadingRef.current || hasLoadedRef.current) return;
+    isLoadingRef.current = true;
+    setLoading(true);
+    setError(null);
+    try {
+      const ok = await testApiConnection();
+      if (!ok) return;
 
       const result = await trackService.getAll();
-
       if (result.success && result.data) {
         const tracksData: Track[] = result.data;
         setTracks(tracksData);
 
-        const uniqueArtists: Artist[] = [];
-        const artistIds = new Set<string>();
-        tracksData.forEach((track) => {
-          if (track.artists && Array.isArray(track.artists)) {
-            track.artists.forEach((artist) => {
-              if (artist && artist._id && !artistIds.has(artist._id)) {
-                artistIds.add(artist._id);
-                uniqueArtists.push(artist);
-              }
-            });
-          }
-        });
-        setArtists(uniqueArtists);
+        // Derive artists
+        const artistMap = new Map<string, Artist>();
+        tracksData.forEach(t => t.artists?.forEach(a => {
+          if (a?._id && !artistMap.has(a._id)) artistMap.set(a._id, a);
+        }));
+        setArtists([...artistMap.values()]);
 
-        const uniqueAlbums: Album[] = [];
-        const albumIds = new Set<string>();
-        tracksData.forEach((track) => {
-          if (track.album && track.album._id && !albumIds.has(track.album._id)) {
-            albumIds.add(track.album._id);
-            uniqueAlbums.push(track.album);
-          }
+        // Derive albums
+        const albumMap = new Map<string, Album>();
+        tracksData.forEach(t => {
+          if (t.album?._id && !albumMap.has(t.album._id)) albumMap.set(t.album._id, t.album);
         });
-        setAlbums(uniqueAlbums);
+        setAlbums([...albumMap.values()]);
 
         hasLoadedRef.current = true;
       } else {
         setError(result.error || 'Erro ao carregar dados da API');
       }
+
+      if (token) await loadFeed(null, false);
     } catch (err: any) {
       setError(`Erro: ${err.message || 'Não foi possível conectar ao servidor'}`);
     } finally {
       setLoading(false);
       isLoadingRef.current = false;
     }
-  }, [testAPIConnection]);
+  }, [testApiConnection, loadFeed, token]);
 
-  useEffect(() => {
-    const setupAudio = async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          staysActiveInBackground: true,
-          playsInSilentModeIOS: true,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-        });
-      } catch (err) {
-        console.warn('⚠️ Erro ao configurar áudio:', err);
-      }
-    };
-    setupAudio();
-    loadAllData();
-    return () => {
-      if (soundRef.current) soundRef.current.unloadAsync().catch(() => {});
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadAllData(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const unloadCurrentSound = useCallback(async () => {
-    try {
-      if (soundRef.current) {
-        soundRef.current.setOnPlaybackStatusUpdate(null);
-        await soundRef.current.stopAsync().catch(() => {});
-        await soundRef.current.unloadAsync().catch(() => {});
-      }
-    } catch (err) {
-      console.warn('⚠️ Erro ao descarregar som:', err);
-    } finally {
-      soundRef.current = null;
-      isLoadedRef.current = false;
-      isPlaybackFinishedRef.current = false;
-    }
+  // ── Called by MusicPlayerProvider when a track starts playing ────────────
+  const onTrackPlayed = useCallback((track: Track) => {
+    setListeningHistory(prev => {
+      const albumMap = new Map<string, Track>();
+      if (track.album?._id) albumMap.set(track.album._id, track);
+      prev.forEach(t => {
+        const id = t.album?._id;
+        if (id && !albumMap.has(id)) albumMap.set(id, t);
+      });
+      return [...albumMap.values()].slice(0, 10);
+    });
+    setTracks(prev =>
+      prev.map(t => t._id === track._id ? { ...t, playCount: (t.playCount || 0) + 1 } : t)
+    );
   }, []);
 
-  const playNextRef = useRef<() => Promise<void>>(async () => {});
-
-  const playTrack = useCallback(async (track: Track): Promise<void> => {
-    try {
-      if (currentTrackRef.current?._id === track._id && isPlayingRef.current) return;
-
-      setCurrentTrackRef.current(track);
-      setPositionRef.current(0);
-      setIsPlayingRef.current(true);
-
-      trackService.registerPlay(track._id).catch(() => {});
-      await unloadCurrentSound();
-
-      try {
-        const { sound: newSound } = await Audio.Sound.createAsync(
-          { uri: track.audioUrl },
-          { shouldPlay: true, volume: playerStore.volume || 1.0, isLooping: false }
-        );
-
-        soundRef.current = newSound;
-        isLoadedRef.current = true;
-        isPlaybackFinishedRef.current = false;
-
-        newSound.setOnPlaybackStatusUpdate((status: any) => {
-          if (!status.isLoaded) return;
-          if (status.positionMillis !== undefined) {
-            const newPosition = Math.floor(status.positionMillis / 1000);
-            if (newPosition !== positionRef.current) setPositionRef.current(newPosition);
-          }
-          if (typeof status.isPlaying === 'boolean' && status.isPlaying !== isPlayingRef.current) {
-            setIsPlayingRef.current(status.isPlaying);
-          }
-          if (status.didJustFinish && !isPlaybackFinishedRef.current) {
-            isPlaybackFinishedRef.current = true;
-            playNextRef.current().catch(() => {});
-          }
-        });
-
-        setListeningHistory(prev => {
-          const albumMap = new Map();
-          if (track.album?._id) albumMap.set(track.album._id, track);
-          prev.forEach(oldTrack => {
-            const albumId = oldTrack.album?._id;
-            if (albumId && !albumMap.has(albumId)) albumMap.set(albumId, oldTrack);
-          });
-          return Array.from(albumMap.values()).slice(0, 10);
-        });
-
-        setTracks(prev => prev.map(t =>
-          t._id === track._id ? { ...t, playCount: (t.playCount || 0) + 1 } : t
-        ));
-      } catch (audioError: any) {
-        console.error('❌ Erro ao carregar áudio:', audioError.message);
-        soundRef.current = null;
-        isLoadedRef.current = false;
-        setIsPlayingRef.current(false);
-      }
-    } catch (error: any) {
-      console.error('💥 Erro geral no playTrack:', error.message);
-      setIsPlayingRef.current(false);
-    }
-  }, [unloadCurrentSound, playerStore.volume]);
-
-  const pauseTrack = useCallback(async (): Promise<void> => {
-    setIsPlayingRef.current(false);
-    try {
-      if (soundRef.current && isLoadedRef.current) await soundRef.current.pauseAsync();
-    } catch (error: any) {
-      console.error('❌ Erro ao pausar:', error.message);
-    }
-  }, []);
-
-  const resumeTrack = useCallback(async (): Promise<void> => {
-    setIsPlayingRef.current(true);
-    try {
-      if (soundRef.current && isLoadedRef.current) await soundRef.current.playAsync();
-    } catch (error: any) {
-      console.error('❌ Erro ao retomar:', error.message);
-      setIsPlayingRef.current(false);
-    }
-  }, []);
-
-  const togglePlayPause = useCallback(async (): Promise<void> => {
-    if (!currentTrackRef.current) return;
-    if (isPlayingRef.current) await pauseTrack();
-    else await resumeTrack();
-  }, [pauseTrack, resumeTrack]);
-
-  const playNext = useCallback(async (): Promise<void> => {
-    const current = currentTrackRef.current;
-    const currentTracks = tracksRef.current;
-    if (!current || currentTracks.length === 0) return;
-    const currentIndex = currentTracks.findIndex(t => t._id === current._id);
-    await playTrack(currentTracks[(currentIndex + 1) % currentTracks.length]);
-  }, [playTrack]);
-
-  const playPrevious = useCallback(async (): Promise<void> => {
-    const current = currentTrackRef.current;
-    const currentTracks = tracksRef.current;
-    if (!current || currentTracks.length === 0) return;
-    const currentIndex = currentTracks.findIndex(t => t._id === current._id);
-    const prevIndex = currentIndex === 0 ? currentTracks.length - 1 : currentIndex - 1;
-    await playTrack(currentTracks[prevIndex]);
-  }, [playTrack]);
-
-  const seekTo = useCallback(async (seconds: number): Promise<void> => {
-    if (!soundRef.current || !isLoadedRef.current) return;
-    try {
-      await soundRef.current.setPositionAsync(seconds * 1000);
-      setPositionRef.current(seconds);
-    } catch (error) {
-      console.error('❌ Erro ao buscar posição:', error);
-    }
-  }, []);
-
-  playNextRef.current = playNext;
-
-  // ─── Helpers ───────────────────────────────────────────────────────────────
+  // ── Selectors (stable — read from ref, no dep on tracks state) ───────────
   const getPopularTracks = useCallback((limit = 6): Track[] =>
-    [...tracksRef.current].sort((a, b) => (b.playCount || 0) - (a.playCount || 0)).slice(0, limit),
-  []);
+    [...tracksRef.current].sort((a, b) => (b.playCount || 0) - (a.playCount || 0)).slice(0, limit), []);
 
   const getRecentTracks = useCallback((limit = 6): Track[] =>
-    [...tracksRef.current].sort((a, b) =>
-      new Date(b.releaseDate).getTime() - new Date(a.releaseDate).getTime()
-    ).slice(0, limit),
-  []);
+    [...tracksRef.current]
+      .sort((a, b) => new Date(b.releaseDate).getTime() - new Date(a.releaseDate).getTime())
+      .slice(0, limit), []);
 
   const searchTracks = useCallback((query: string): Track[] => {
     if (!query.trim()) return [];
@@ -348,8 +241,7 @@ export const MusicDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, []);
 
   const getTracksByArtist = useCallback((artistId: string): Track[] =>
-    tracksRef.current.filter(t => t.artists?.some(a => a._id === artistId)),
-  []);
+    tracksRef.current.filter(t => t.artists?.some(a => a._id === artistId)), []);
 
   const getAlbumsByArtist = useCallback((artistId: string): Album[] => {
     const seen = new Set<string>();
@@ -364,8 +256,7 @@ export const MusicDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, []);
 
   const getTracksByAlbum = useCallback((albumId: string): Track[] =>
-    tracksRef.current.filter(t => t.album?._id === albumId),
-  []);
+    tracksRef.current.filter(t => t.album?._id === albumId), []);
 
   const getFeaturedBands = useCallback((limit = 4): Artist[] =>
     [...artists].sort((a, b) => (b.monthlyListeners || 0) - (a.monthlyListeners || 0)).slice(0, limit),
@@ -373,98 +264,120 @@ export const MusicDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const forceRefresh = useCallback(async (): Promise<void> => {
     hasLoadedRef.current = false;
+    feedCursorRef.current = null;
+    setFeedItems([]);
+    setHasMoreFeed(true);
     await loadAllData();
   }, [loadAllData]);
 
-  // ─── Social: Follow / Unfollow Artist ─────────────────────────────────────
+  // ── Social — Artists ─────────────────────────────────────────────────────
   const followArtist = useCallback(async (artistId: string): Promise<void> => {
-    try {
-      await artistService.follow(artistId);
-      setArtists(prev => prev.map(a =>
-        a._id === artistId
-          ? { ...a, monthlyListeners: (a.monthlyListeners || 0) + 1 }
-          : a
-      ));
-    } catch (err) {
-      console.error('❌ Erro ao seguir artista:', err);
-      throw err;
-    }
+    await artistService.follow(artistId);
+    setArtists(prev => prev.map(a =>
+      a._id === artistId ? { ...a, monthlyListeners: (a.monthlyListeners || 0) + 1 } : a
+    ));
   }, []);
 
   const unfollowArtist = useCallback(async (artistId: string): Promise<void> => {
-    try {
-      await artistService.unfollow(artistId);
-      setArtists(prev => prev.map(a =>
-        a._id === artistId
-          ? { ...a, monthlyListeners: Math.max(0, (a.monthlyListeners || 0) - 1) }
-          : a
-      ));
-    } catch (err) {
-      console.error('❌ Erro ao deixar de seguir artista:', err);
-      throw err;
-    }
+    await artistService.unfollow(artistId);
+    setArtists(prev => prev.map(a =>
+      a._id === artistId ? { ...a, monthlyListeners: Math.max(0, (a.monthlyListeners || 0) - 1) } : a
+    ));
   }, []);
 
   const checkFollowingArtist = useCallback(async (artistId: string): Promise<boolean> => {
-    try {
-      return await artistService.checkFollowing(artistId);
-    } catch (err) {
-      console.error('❌ Erro ao verificar follow:', err);
-      return false;
-    }
+    try { return await artistService.checkFollowing(artistId); }
+    catch { return false; }
   }, []);
 
-  // ─── Social: Like / Unlike Album ──────────────────────────────────────────
+  // ── Social — Albums ──────────────────────────────────────────────────────
   const likeAlbum = useCallback(async (albumId: string): Promise<void> => {
-    try {
-      await albumService.like(albumId);
-      setAlbums(prev => prev.map(a =>
-        a._id === albumId ? { ...a, likeCount: (a.likeCount || 0) + 1 } : a
-      ));
-    } catch (err) {
-      console.error('❌ Erro ao curtir álbum:', err);
-      throw err;
-    }
+    await albumService.like(albumId);
+    setAlbums(prev => prev.map(a =>
+      a._id === albumId ? { ...a, likeCount: (a.likeCount || 0) + 1 } : a
+    ));
   }, []);
 
   const unlikeAlbum = useCallback(async (albumId: string): Promise<void> => {
-    try {
-      await albumService.unlike(albumId);
-      setAlbums(prev => prev.map(a =>
-        a._id === albumId ? { ...a, likeCount: Math.max(0, (a.likeCount || 0) - 1) } : a
-      ));
-    } catch (err) {
-      console.error('❌ Erro ao descurtir álbum:', err);
-      throw err;
-    }
+    await albumService.unlike(albumId);
+    setAlbums(prev => prev.map(a =>
+      a._id === albumId ? { ...a, likeCount: Math.max(0, (a.likeCount || 0) - 1) } : a
+    ));
   }, []);
 
   const checkAlbumLiked = useCallback(async (albumId: string): Promise<boolean> => {
-    try {
-      return await albumService.checkLike(albumId);
-    } catch (err) {
-      console.error('❌ Erro ao verificar like:', err);
-      return false;
-    }
+    try { return await albumService.checkLike(albumId); }
+    catch { return false; }
   }, []);
 
-  const value: MusicDataContextValue = {
+  // ── Social — Tracks ──────────────────────────────────────────────────────
+  const likeTrack = useCallback(async (trackId: string): Promise<void> => {
+    // Optimistic update
+    syncLikedSet(prev => { prev.add(trackId); return prev; });
+    setTracks(prev => prev.map(t =>
+      t._id === trackId ? { ...t, likeCount: (t.likeCount || 0) + 1 } : t
+    ));
+    try {
+      const result = await trackService.like(trackId, token!);
+      if (!result.success) {
+        syncLikedSet(prev => { prev.delete(trackId); return prev; });
+        setTracks(prev => prev.map(t =>
+          t._id === trackId ? { ...t, likeCount: Math.max(0, (t.likeCount || 0) - 1) } : t
+        ));
+      } else if (result.data?.likeCount !== undefined) {
+        setTracks(prev => prev.map(t =>
+          t._id === trackId ? { ...t, likeCount: result.data.likeCount } : t
+        ));
+      }
+    } catch {
+      syncLikedSet(prev => { prev.delete(trackId); return prev; });
+      setTracks(prev => prev.map(t =>
+        t._id === trackId ? { ...t, likeCount: Math.max(0, (t.likeCount || 0) - 1) } : t
+      ));
+    }
+  }, [token, syncLikedSet]);
+
+  const unlikeTrack = useCallback(async (trackId: string): Promise<void> => {
+    syncLikedSet(prev => { prev.delete(trackId); return prev; });
+    setTracks(prev => prev.map(t =>
+      t._id === trackId ? { ...t, likeCount: Math.max(0, (t.likeCount || 0) - 1) } : t
+    ));
+    try {
+      const result = await trackService.unlike(trackId, token!);
+      if (!result.success) {
+        syncLikedSet(prev => { prev.add(trackId); return prev; });
+        setTracks(prev => prev.map(t =>
+          t._id === trackId ? { ...t, likeCount: (t.likeCount || 0) + 1 } : t
+        ));
+      } else if (result.data?.likeCount !== undefined) {
+        setTracks(prev => prev.map(t =>
+          t._id === trackId ? { ...t, likeCount: result.data.likeCount } : t
+        ));
+      }
+    } catch {
+      syncLikedSet(prev => { prev.add(trackId); return prev; });
+      setTracks(prev => prev.map(t =>
+        t._id === trackId ? { ...t, likeCount: (t.likeCount || 0) + 1 } : t
+      ));
+    }
+  }, [token, syncLikedSet]);
+
+  const isTrackLiked = useCallback((trackId: string): boolean =>
+    likedTrackIdsRef.current.has(trackId), []);
+
+  // ── Memoised context value ───────────────────────────────────────────────
+  const value = useMemo<MusicDataContextValue>(() => ({
     tracks,
     artists,
     albums,
     loading,
     error,
     listeningHistory,
-    currentTrack: playerStore.currentTrack,
-    isPlaying: playerStore.isPlaying,
-    position: playerStore.position,
-    duration: playerStore.currentTrack?.duration || 0,
-    playTrack,
-    pauseTrack,
-    resumeTrack,
-    togglePlayPause,
-    playNext,
-    playPrevious,
+    feedItems,
+    hasMoreFeed,
+    feedLoading,
+    loadMoreFeed,
+    onTrackPlayed,
     getPopularTracks,
     getRecentTracks,
     searchTracks,
@@ -473,15 +386,28 @@ export const MusicDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     getTracksByAlbum,
     getFeaturedBands,
     refresh: forceRefresh,
-    testConnection: testAPIConnection,
-    seekTo,
+    testApiConnection,
     followArtist,
     unfollowArtist,
     checkFollowingArtist,
     likeAlbum,
     unlikeAlbum,
     checkAlbumLiked,
-  };
+    likedTrackIds,
+    likeTrack,
+    unlikeTrack,
+    isTrackLiked,
+  }), [
+    tracks, artists, albums, loading, error, listeningHistory,
+    feedItems, hasMoreFeed, feedLoading,
+    loadMoreFeed, onTrackPlayed,
+    getPopularTracks, getRecentTracks, searchTracks,
+    getTracksByArtist, getAlbumsByArtist, getTracksByAlbum, getFeaturedBands,
+    forceRefresh, testApiConnection,
+    followArtist, unfollowArtist, checkFollowingArtist,
+    likeAlbum, unlikeAlbum, checkAlbumLiked,
+    likedTrackIds, likeTrack, unlikeTrack, isTrackLiked,
+  ]);
 
   return (
     <MusicDataContext.Provider value={value}>
@@ -491,7 +417,7 @@ export const MusicDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 };
 
 export const useMusicData = (): MusicDataContextValue => {
-  const context = useContext(MusicDataContext);
-  if (!context) throw new Error('useMusicData deve ser usado dentro de MusicDataProvider');
-  return context;
+  const ctx = useContext(MusicDataContext);
+  if (!ctx) throw new Error('useMusicData deve ser usado dentro de MusicDataProvider');
+  return ctx;
 };

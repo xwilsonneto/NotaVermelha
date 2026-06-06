@@ -13,8 +13,11 @@ router.post(
   albumController.createAlbum
 );
 
-// Listar álbuns
+// Listar álbuns (método original)
 router.get("/", albumController.getAlbums);
+
+// Listar álbuns com cursor pagination (NOVO - MAIS EFICIENTE)
+router.get("/cursor", albumController.getAlbumsCursor);
 
 // Buscar álbum específico
 router.get("/:id", albumController.getAlbumById);

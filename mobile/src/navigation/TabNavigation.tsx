@@ -5,11 +5,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import HomeScreen from '../screens/HomeScreen';
 import LibraryScreen from '../screens/LibraryScreen';
 import SearchScreen from '../screens/SearchScreen';
+import DiscoverScreen from '../screens/DiscoverScreen';
 
 export type TabParamList = {
   Home: undefined;
   Library: undefined;
   Search: undefined;
+  Discover: undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -55,6 +57,16 @@ export default function TabNavigator() {
             <MaterialCommunityIcons name="magnify" size={size} color={color} />
           ),
           title: 'Buscar',
+        }}
+      />
+      <Tab.Screen
+        name="Discover"
+        component={DiscoverScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="compass" size={size} color={color} />
+          ),
+          title: 'Descobrir',
         }}
       />
     </Tab.Navigator>

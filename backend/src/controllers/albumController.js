@@ -1,10 +1,11 @@
 const Album = require("../models/Album");
 const AlbumLike = require("../models/AlbumLike");
-const User = require("../models/User"); // Adicionar import
+const User = require("../models/User");
+const cursorPagination = require("../services/cursorPaginationService");
+const cacheService = require("../services/cacheService");
 
 exports.createAlbum = async (req, res) => {
   try {
-    // Verificar se o usuário existe e tem role de artista
     const user = await User.findById(req.user.id);
     if (!user || !["artist", "band", "label"].includes(user.role)) {
       return res.status(403).json({ message: "Usuário não autorizado a criar álbuns" });
@@ -12,20 +13,20 @@ exports.createAlbum = async (req, res) => {
 
     const album = new Album({
       ...req.body,
-      artist: req.user.id // Agora usa o ID do User, não ArtistProfile
+      artist: req.user.id
     });
     
     await album.save();
-    
-    // Popular o artista para retornar com dados completos
     await album.populate("artist", "username name avatar");
     
+    await cacheService.invalidatePattern('albums:*');
     res.status(201).json(album);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
+// MANTIDO - método original
 exports.getAlbums = async (req, res) => {
   try {
     const albums = await Album.find()
@@ -37,14 +38,63 @@ exports.getAlbums = async (req, res) => {
   }
 };
 
+// NOVO - método com cursor pagination
+exports.getAlbumsCursor = async (req, res) => {
+  try {
+    const cursor = req.query.cursor || null;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+    const artistId = req.query.artistId || null;
+    
+    let result;
+    if (artistId) {
+      result = await cursorPagination.paginateArtistAlbums(artistId, cursor, limit);
+    } else {
+      // Para todos os álbuns
+      const query = {};
+      if (cursor) {
+        const lastDoc = await Album.findById(cursor).select('releaseDate _id').lean();
+        if (lastDoc) {
+          query.$or = [
+            { releaseDate: { $lt: lastDoc.releaseDate } },
+            { releaseDate: lastDoc.releaseDate, _id: { $lt: lastDoc._id } }
+          ];
+        }
+      }
+      
+      const albums = await Album.find(query)
+        .populate("artist", "name avatar")
+        .sort({ releaseDate: -1, _id: -1 })
+        .limit(limit + 1)
+        .lean();
+      
+      const hasMore = albums.length > limit;
+      const nextCursor = hasMore ? albums[limit - 1]._id : null;
+      result = {
+        success: true,
+        data: hasMore ? albums.slice(0, limit) : albums,
+        nextCursor,
+        hasMore,
+        count: albums.length > limit ? limit : albums.length
+      };
+    }
+    
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 exports.getAlbumById = async (req, res) => {
   try {
-    const album = await Album.findById(req.params.id)
-      .populate("artist", "username name avatar")
-      .populate({
-        path: "tracks",
-        populate: { path: "artists", select: "name username avatar" }
-      });
+    const cacheKey = `album:${req.params.id}`;
+    const album = await cacheService.getOrSet(cacheKey, async () => {
+      return await Album.findById(req.params.id)
+        .populate("artist", "username name avatar")
+        .populate({
+          path: "tracks",
+          populate: { path: "artists", select: "name username avatar" }
+        });
+    }, 600);
       
     if (!album) {
       return res.status(404).json({ message: "Álbum não encontrado" });
@@ -64,14 +114,15 @@ exports.deleteAlbum = async (req, res) => {
       return res.status(404).json({ message: "Álbum não encontrado" });
     }
     
-    // Verificar se o usuário é o dono do álbum
     if (album.artist.toString() !== req.user.id && req.user.role !== "admin") {
       return res.status(403).json({ message: "Não autorizado a deletar este álbum" });
     }
     
     await Album.findByIdAndDelete(req.params.id);
-    // Remover todos os likes associados
     await AlbumLike.deleteMany({ album: req.params.id });
+    
+    await cacheService.invalidatePattern('albums:*');
+    await cacheService.invalidatePattern(`album:${req.params.id}`);
     
     res.json({ message: "Álbum deletado com sucesso" });
   } catch (error) {
@@ -79,14 +130,11 @@ exports.deleteAlbum = async (req, res) => {
   }
 };
 
-// ─── Like / Unlike ────────────────────────────────────────────────────────────
-
 exports.likeAlbum = async (req, res) => {
   try {
     const { id: albumId } = req.params;
     const userId = req.user.id;
 
-    // Verificar se o álbum existe
     const album = await Album.findById(albumId);
     if (!album) {
       return res.status(404).json({ message: "Álbum não encontrado" });
@@ -98,10 +146,10 @@ exports.likeAlbum = async (req, res) => {
     }
 
     await AlbumLike.create({ user: userId, album: albumId });
-    
-    // Incrementar likeCount no álbum
     await Album.findByIdAndUpdate(albumId, { $inc: { likeCount: 1 } });
-
+    
+    await cacheService.invalidatePattern(`album:${albumId}`);
+    
     res.json({ success: true, liked: true, message: "Álbum curtido com sucesso" });
   } catch (error) {
     console.error("Erro ao curtir álbum:", error);
@@ -119,8 +167,9 @@ exports.unlikeAlbum = async (req, res) => {
       return res.status(400).json({ success: false, message: "Álbum não estava curtido" });
     }
 
-    // Decrementar likeCount no álbum
     await Album.findByIdAndUpdate(albumId, { $inc: { likeCount: -1 } });
+    
+    await cacheService.invalidatePattern(`album:${albumId}`);
     
     res.json({ success: true, liked: false, message: "Like removido com sucesso" });
   } catch (error) {

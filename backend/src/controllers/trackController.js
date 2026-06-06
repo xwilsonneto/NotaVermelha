@@ -1,4 +1,6 @@
 const trackService = require("../services/trackService");
+const cursorPagination = require("../services/cursorPaginationService");
+const cacheService = require("../services/cacheService");
 
 exports.createTrack = async (req, res) => {
   try {
@@ -26,6 +28,7 @@ exports.uploadTrack = async (req, res) => {
   }
 };
 
+// MANTIDO - método original com paginação (não quebra nada)
 exports.getTracks = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -37,9 +40,28 @@ exports.getTracks = async (req, res) => {
   }
 };
 
+// NOVO - método com cursor pagination (MAIS EFICIENTE)
+exports.getTracksCursor = async (req, res) => {
+  try {
+    const cursor = req.query.cursor || null;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100); // Max 100
+    
+    const result = await cursorPagination.paginateTracks({}, cursor, limit);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// MANTIDO - método original
 exports.getTrackById = async (req, res) => {
   try {
-    const track = await trackService.getTrackById(req.params.id);
+    // Com cache
+    const cacheKey = `track:${req.params.id}`;
+    const track = await cacheService.getOrSet(cacheKey, async () => {
+      return await trackService.getTrackById(req.params.id);
+    }, 300);
+    
     if (!track) return res.status(404).json({ success: false, message: "Track não encontrada" });
     res.json({ success: true, data: track });
   } catch (error) {
@@ -51,6 +73,8 @@ exports.registerPlay = async (req, res) => {
   try {
     const track = await trackService.incrementPlay(req.params.id);
     if (!track) return res.status(404).json({ success: false, message: "Track não encontrada" });
+    // Invalidar cache
+    await cacheService.invalidateTrack(req.params.id);
     res.json({ success: true, playCount: track.playCount });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -60,6 +84,7 @@ exports.registerPlay = async (req, res) => {
 exports.likeTrack = async (req, res) => {
   try {
     const result = await trackService.likeTrack(req.params.id, req.user.id);
+    await cacheService.invalidateTrack(req.params.id);
     res.json({ success: true, ...result });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -69,6 +94,7 @@ exports.likeTrack = async (req, res) => {
 exports.unlikeTrack = async (req, res) => {
   try {
     const result = await trackService.unlikeTrack(req.params.id, req.user.id);
+    await cacheService.invalidateTrack(req.params.id);
     res.json({ success: true, ...result });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -100,6 +126,7 @@ exports.getLikedTracks = async (userId) => {
 exports.deleteTrack = async (req, res) => {
   try {
     await trackService.deleteTrack(req.params.id);
+    await cacheService.invalidateTrack(req.params.id);
     res.json({ success: true, message: "Track deletada" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

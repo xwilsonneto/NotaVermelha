@@ -1,12 +1,18 @@
 // App.tsx
 import 'react-native-gesture-handler';
 import React from 'react';
+// @ts-ignore — nativewind global CSS, sem tipos TypeScript
 import './global.css';
 import AppNavigator from './src/navigation/AppNavigation';
 import { StatusBar } from 'expo-status-bar';
-import { useFonts, Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold } from '@expo-google-fonts/poppins';
+import {
+  useFonts,
+  Poppins_400Regular,
+  Poppins_600SemiBold,
+  Poppins_700Bold,
+} from '@expo-google-fonts/poppins';
 import { ActivityIndicator, View } from 'react-native';
-import { MusicDataProvider } from './src/contexts/MusicDataContext'; // ✅ ADICIONADO
+import { MusicProviders } from './src/contexts/MusicProviders';
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -24,9 +30,9 @@ export default function App() {
   }
 
   return (
-    <MusicDataProvider> {/* ✅ ADICIONADO — instância única global */}
+    <MusicProviders>
       <StatusBar style="light" />
       <AppNavigator />
-    </MusicDataProvider>
+    </MusicProviders>
   );
 }

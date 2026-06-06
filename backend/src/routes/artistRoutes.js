@@ -13,8 +13,11 @@ router.post(
   artistController.createArtistProfile
 );
 
-// Listar artistas
+// Listar artistas (método original)
 router.get("/", artistController.getArtists);
+
+// Listar artistas com cursor pagination (NOVO - MAIS EFICIENTE)
+router.get("/cursor", artistController.getArtistsCursor);
 
 // Buscar artista específico
 router.get("/:id", artistController.getArtistById);

@@ -13,6 +13,7 @@ import { RootStackParamList } from '../navigation/AppNavigation';
 import { useMusicData, Track, Album } from '../contexts/MusicDataContext';
 import { MiniPlayer } from '../components/player/MiniPlayer';
 import { BottomNavigation } from '../components/home/BottomNavigation';
+import { useMusicPlayer } from '../contexts/MusicPlayerContext';
 
 type AlbumRouteProp = RouteProp<RootStackParamList, 'Album'>;
 type AlbumNavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -31,10 +32,10 @@ export default function AlbumScreen() {
   const {
     albums, tracks, artists,
     getTracksByAlbum,
-    playTrack, currentTrack, isPlaying,
     likeAlbum, unlikeAlbum, checkAlbumLiked,
   } = useMusicData();
 
+  const { playTrack, currentTrack, isPlaying } = useMusicPlayer();
   const [isLiked, setIsLiked] = useState(false);
   const [likeLoading, setLikeLoading] = useState(false);
   const [checkingLike, setCheckingLike] = useState(true);
@@ -77,7 +78,7 @@ export default function AlbumScreen() {
   }, [isLiked, likeLoading, albumId, likeAlbum, unlikeAlbum]);
 
   const handlePlayAll = useCallback(() => {
-    if (albumTracks.length > 0) playTrack(albumTracks[0]);
+    if (albumTracks.length > 0) playTrack(albumTracks[0], albumTracks);
   }, [albumTracks, playTrack]);
 
   const totalDuration = albumTracks.reduce((s, t) => s + (t.duration || 0), 0);

@@ -60,7 +60,6 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ activeTab = 
     if (tab.route) {
       navigation.navigate(tab.route as any);
     } else {
-      // Placeholder para tabs futuras
       console.log(`Tab ${tab.id} - em breve!`);
     }
   };
