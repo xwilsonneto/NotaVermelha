@@ -245,7 +245,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#090909] text-white flex overflow-hidden">
+    <div className="min-h-screen bg-[#090909] text-white flex overflow-x-hidden overflow-y-auto lg:overflow-hidden">
       {/* LEFT SIDE */}
       <div className="hidden lg:flex w-[48%] relative border-r border-red-950 overflow-hidden bg-gradient-to-br from-[#140202] via-[#090909] to-black">
         <div className="absolute w-[420px] h-[420px] bg-red-700/20 blur-[120px] rounded-full top-[-80px] left-[-80px]" />
@@ -309,12 +309,12 @@ export default function RegisterPage() {
       </div>
 
       {/* RIGHT SIDE - FORM */}
-      <div className="flex-1 flex items-center justify-center px-6 py-12 relative">
+      <div className="flex-1 flex items-center justify-center px-4 md:px-6 py-8 md:py-12 relative">
         <div className="absolute w-[300px] h-[300px] bg-red-700/10 blur-[120px] rounded-full top-0" />
 
-        <div className="relative z-10 w-full max-w-[520px]">
+        <div className="relative z-10 w-full max-w-[520px] px-0">
           {/* Mobile logo */}
-          <div className="flex lg:hidden items-center justify-center gap-3 mb-10">
+          <div className="flex lg:hidden items-center justify-center gap-3 mb-6 md:mb-10">
             <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center">
               <span className="text-2xl">🐞</span>
             </div>
@@ -328,8 +328,8 @@ export default function RegisterPage() {
           {step === 1 && (
             <>
               <div className="mb-10 min-h-[132px]">
-                <h2 className="text-5xl font-black tracking-tight leading-none">Crie sua conta</h2>
-                <p className="mt-4 text-zinc-400 leading-relaxed max-w-md">
+                <h2 className="text-4xl md:text-5xl font-black tracking-tight leading-none">Crie sua conta</h2>
+                <p className="mt-3 md:mt-4 text-sm md:text-base text-zinc-400 leading-relaxed max-w-md">
                   Configure seu acesso para entrar na comunidade.
                 </p>
               </div>
@@ -346,7 +346,7 @@ export default function RegisterPage() {
                     required
                     className={`w-full bg-[#111111] border ${
                       fieldErrors.email ? 'border-red-500' : 'border-zinc-800 focus:border-red-600'
-                    } focus:ring-4 focus:ring-red-900/40 transition-all rounded-xl px-4 py-4 outline-none`}
+                    } focus:ring-4 focus:ring-red-900/40 transition-all rounded-xl px-4 py-3 md:py-4 outline-none`}
                   />
                   {fieldErrors.email && (
                     <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
@@ -441,7 +441,7 @@ export default function RegisterPage() {
                 <button
                   type="submit"
                   disabled={!isStep1Valid()}
-                  className={`w-full h-14 rounded-xl font-bold text-lg shadow-[0_0_30px_rgba(255,0,0,0.25)] transition-all ${
+                  className={`w-full h-12 md:h-14 rounded-xl font-bold text-base md:text-lg shadow-[0_0_30px_rgba(255,0,0,0.25)] transition-all ${
                     isStep1Valid()
                       ? 'bg-red-600 hover:bg-red-500'
                       : 'bg-red-800/40 cursor-not-allowed opacity-60'
@@ -451,7 +451,7 @@ export default function RegisterPage() {
                 </button>
               </form>
 
-              <div className="flex items-center gap-4 my-8">
+              <div className="flex items-center gap-4 my-6 md:my-8">
                 <div className="h-px flex-1 bg-zinc-800" />
                 <span className="text-zinc-500 text-sm">ou</span>
                 <div className="h-px flex-1 bg-zinc-800" />
@@ -481,12 +481,12 @@ export default function RegisterPage() {
                     setLocalError(null);
                     setStep(1);
                   }}
-                  className="flex items-center gap-2 text-zinc-500 hover:text-zinc-300 transition-colors text-sm mb-6"
+                  className="flex items-center gap-2 text-zinc-500 hover:text-zinc-300 transition-colors text-sm mb-4 md:mb-6"
                 >
                   ← Voltar
                 </button>
-                <h2 className="text-5xl font-black tracking-tight leading-none">Seu perfil</h2>
-                <p className="mt-4 text-zinc-400 leading-relaxed max-w-md">
+                <h2 className="text-4xl md:text-5xl font-black tracking-tight leading-none">Seu perfil</h2>
+                <p className="mt-3 md:mt-4 text-sm md:text-base text-zinc-400 leading-relaxed max-w-md">
                   Defina como você será visto dentro da plataforma.
                 </p>
               </div>
@@ -495,14 +495,14 @@ export default function RegisterPage() {
                 {/* TIPO DE CONTA */}
                 <div>
                   <label className="block text-sm text-zinc-400 mb-3">Tipo de conta</label>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button
                       type="button"
                       onClick={() => {
                         setStep2((prev) => ({ ...prev, accountType: 'listener' }));
                         setFieldErrors((prev) => ({ ...prev, accountType: undefined }));
                       }}
-                      className={`relative p-5 rounded-2xl border text-left transition-all ${
+                      className={`relative p-4 md:p-5 rounded-xl md:rounded-2xl border text-left transition-all ${
                         step2.accountType === 'listener'
                           ? 'border-red-600 bg-red-950/30'
                           : 'border-zinc-800 bg-[#111111] hover:border-zinc-700'
@@ -521,7 +521,7 @@ export default function RegisterPage() {
                         setStep2((prev) => ({ ...prev, accountType: 'creator' }));
                         setFieldErrors((prev) => ({ ...prev, accountType: undefined }));
                       }}
-                      className={`relative p-5 rounded-2xl border text-left transition-all ${
+                      className={`relative p-4 md:p-5 rounded-xl md:rounded-2xl border text-left transition-all ${
                         step2.accountType === 'creator'
                           ? 'border-red-600 bg-red-950/30'
                           : 'border-zinc-800 bg-[#111111] hover:border-zinc-700'
@@ -616,7 +616,7 @@ export default function RegisterPage() {
                     required
                     className={`w-full bg-[#111111] border ${
                       fieldErrors.displayName ? 'border-red-500' : 'border-zinc-800 focus:border-red-600'
-                    } focus:ring-4 focus:ring-red-900/40 transition-all rounded-xl px-4 py-4 outline-none`}
+                    } focus:ring-4 focus:ring-red-900/40 transition-all rounded-xl px-4 py-3 md:py-4 outline-none`}
                   />
                   {fieldErrors.displayName && (
                     <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
@@ -626,7 +626,7 @@ export default function RegisterPage() {
                 </div>
 
                 {/* TERMOS */}
-                <div className="flex items-start gap-3 pt-2">
+                <div className="flex items-start gap-2 md:gap-3 pt-2">
                   <input
                     type="checkbox"
                     name="acceptedTerms"
@@ -661,7 +661,7 @@ export default function RegisterPage() {
                 <button
                   type="submit"
                   disabled={isLoading || !isStep2Valid()}
-                  className={`w-full h-14 rounded-xl font-bold text-lg shadow-[0_0_30px_rgba(255,0,0,0.25)] transition-all flex items-center justify-center gap-2 ${
+                  className={`w-full h-12 md:h-14 rounded-xl font-bold text-base md:text-lg shadow-[0_0_30px_rgba(255,0,0,0.25)] transition-all flex items-center justify-center gap-2 ${
                     !isLoading && isStep2Valid()
                       ? 'bg-red-600 hover:bg-red-500'
                       : 'bg-red-800/40 cursor-not-allowed opacity-60'
@@ -680,7 +680,7 @@ export default function RegisterPage() {
             </>
           )}
 
-          <div className="mt-12 text-center text-xs text-zinc-600 leading-relaxed">
+          <div className="mt-8 md:mt-12 text-center text-xs text-zinc-600 leading-relaxed">
             The Experience Lab © 2026 — trabalhadores do mundo, uni-vos.
           </div>
         </div>

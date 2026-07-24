@@ -10,7 +10,7 @@ trim:true
 
 artists:[{
 type:mongoose.Schema.Types.ObjectId,
-ref:"ArtistProfile",
+ref:"Artist",
 required:true
 }],
 

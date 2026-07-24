@@ -1,6 +1,8 @@
 const Artist = require("../models/Artist");
 const Follow = require("../models/Follow");
 const User = require("../models/User");
+const Track = require("../models/Track");
+const Album = require("../models/Album");
 
 exports.createArtistProfile = async (userId, data) => {
   const artist = await Artist.create({
@@ -10,8 +12,31 @@ exports.createArtistProfile = async (userId, data) => {
   return artist;
 };
 
+/**
+ * Busca o artista + músicas mais tocadas + álbuns
+ */
 exports.getArtistById = async (id) => {
-  return Artist.findById(id).lean();
+  const artist = await Artist.findById(id).lean();
+  if (!artist) return null;
+
+  const [tracks, albums] = await Promise.all([
+    Track.find({ artists: id })
+      .populate("artists", "name avatar")
+      .populate("album", "title coverUrl cover")
+      .sort({ playCount: -1 })
+      .limit(10)
+      .lean(),
+
+    Album.find({ artist: id })
+      .sort({ releaseDate: -1 })
+      .lean(),
+  ]);
+
+  return {
+    ...artist,
+    tracks,
+    albums,
+  };
 };
 
 exports.getAllArtists = async () => {
@@ -20,12 +45,6 @@ exports.getAllArtists = async () => {
     .lean();
 };
 
-/**
- * Seguir um artista:
- * 1. Cria Follow com followingArtist
- * 2. Incrementa followersCount no Artist
- * 3. Incrementa followingCount no User
- */
 exports.followArtist = async (userId, artistId) => {
 
   const existing = await Follow.findOne({

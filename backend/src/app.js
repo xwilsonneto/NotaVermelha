@@ -15,20 +15,15 @@ const playlistRoutes = require("./routes/playlistRoutes");
 const userRoutes = require("./routes/userRoutes");
 const authRoutes = require("./routes/authRoutes");
 const feedRoutes = require("./routes/feedRoutes");
+const searchRoutes = require("./routes/searchRoutes");
+const postRoutes = require("./routes/postRoutes"); // ✅ Adicionado
 
 const app = express();
 
 const PORT = process.env.PORT || 5000;
 
-/*
-DATABASE CONNECTION & INITIALIZATION
-*/
-
-// Conectar ao MongoDB
 connectDB();
 
-// Inicializar índices otimizados (roda em background, não bloqueia app)
-// O catch evita que o app quebre se houver erro nos índices
 Promise.resolve()
   .then(async () => {
     console.log("🔧 Inicializando otimizações do banco de dados...");
@@ -40,7 +35,6 @@ Promise.resolve()
     console.log("📌 App continuará rodando normalmente sem os índices extras");
   });
 
-// Inicializar Redis se disponível (opcional, não quebra o app)
 Promise.resolve()
   .then(async () => {
     if (process.env.REDIS_URL) {
@@ -54,57 +48,23 @@ Promise.resolve()
     console.log("📌 Usando cache em memória como fallback");
   });
 
-/*
-MIDDLEWARE
-*/
-
 app.use(cors());
-
 app.use(express.json());
-
 app.use(express.urlencoded({ extended: true }));
-
 app.use(morgan("dev"));
 
-/*
-STATIC FILES
-*/
+app.use("/audio",  express.static(path.join(__dirname, "../../mobile/assets/audio")));
+app.use("/images", express.static(path.join(__dirname, "../../mobile/assets/images")));
 
-app.use(
-  "/audio",
-  express.static(
-    path.join(__dirname, "../../mobile/assets/audio")
-  )
-);
-
-app.use(
-  "/images",
-  express.static(
-    path.join(__dirname, "../../mobile/assets/images")
-  )
-);
-
-/*
-API ROUTES
-*/
-
-app.use("/api/auth", authRoutes);
-
-app.use("/api/users", userRoutes);
-
-app.use("/api/artists", artistRoutes);
-
-app.use("/api/tracks", trackRoutes);
-
-app.use("/api/albums", albumRoutes);
-
+app.use("/api/auth",      authRoutes);
+app.use("/api/users",     userRoutes);
+app.use("/api/artists",   artistRoutes);
+app.use("/api/tracks",    trackRoutes);
+app.use("/api/albums",    albumRoutes);
 app.use("/api/playlists", playlistRoutes);
-
-app.use("/api/feed", feedRoutes);
-
-/*
-HEALTH CHECK
-*/
+app.use("/api/feed",      feedRoutes);
+app.use("/api/posts",     postRoutes); // ✅ Adicionado
+app.use("/api/search",    searchRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({
@@ -116,64 +76,35 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-/*
-TEST FILES
-*/
-
 app.get("/api/test-files", (req, res) => {
   res.json({
-    audio: "http://localhost:5000/audio/",
+    audio:  "http://localhost:5000/audio/",
     images: "http://localhost:5000/images/",
   });
 });
 
-/*
-CACHE INVALIDATION ENDPOINT (Admin only - opcional)
-*/
 app.post("/api/admin/cache/invalidate", async (req, res) => {
   try {
-    // Verificar se é admin (você pode adicionar middleware de auth aqui)
     const { pattern } = req.body;
-    if (!pattern) {
-      return res.status(400).json({ error: "Pattern é obrigatório" });
-    }
-    
+    if (!pattern) return res.status(400).json({ error: "Pattern é obrigatório" });
     await cacheService.invalidatePattern(pattern);
-    res.json({ 
-      success: true, 
-      message: `Cache invalidado para pattern: ${pattern}` 
-    });
+    res.json({ success: true, message: `Cache invalidado para pattern: ${pattern}` });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-/*
-404 HANDLER
-*/
-
 app.use((req, res) => {
-  res.status(404).json({
-    error: "Rota não encontrada",
-  });
+  res.status(404).json({ error: "Rota não encontrada" });
 });
-
-/*
-GLOBAL ERROR HANDLER
-*/
 
 app.use((err, req, res, next) => {
   console.error("❌ Erro não tratado:", err.stack);
-  
   res.status(500).json({
     error: "Erro interno do servidor",
     message: process.env.NODE_ENV === "development" ? err.message : undefined
   });
 });
-
-/*
-SERVER START
-*/
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
@@ -181,28 +112,20 @@ app.listen(PORT, () => {
   console.log(`💾 Cache mode: ${cacheService.redisAvailable ? 'Redis' : 'Memory'}`);
 });
 
-/*
-GRACEFUL SHUTDOWN
-*/
-
 process.on("SIGINT", async () => {
   console.log("🛑 Recebido SIGINT, fechando conexões...");
-  
   if (cacheService.redisAvailable && cacheService.redis) {
     await cacheService.redis.quit();
     console.log("✅ Conexão Redis fechada");
   }
-  
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
   console.log("🛑 Recebido SIGTERM, fechando conexões...");
-  
   if (cacheService.redisAvailable && cacheService.redis) {
     await cacheService.redis.quit();
     console.log("✅ Conexão Redis fechada");
   }
-  
   process.exit(0);
 });

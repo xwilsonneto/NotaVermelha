@@ -1,8 +1,20 @@
 const Album = require("../models/Album");
 const AlbumLike = require("../models/AlbumLike");
 const User = require("../models/User");
+const Artist = require("../models/Artist");
 const cursorPagination = require("../services/cursorPaginationService");
 const cacheService = require("../services/cacheService");
+
+// TEMPORÁRIO: os álbuns/tracks atuais foram seedados apontando pra
+// collection "artists" (model Artist.js), não "users". O schema (Album.js
+// e Track.js) já está com o `ref` pensado pro futuro (User = artista real
+// logado), mas como esses documentos legados referenciam Artist, o
+// populate padrão (que segue o `ref` do schema) sempre retorna null/[].
+// Por isso forçamos `model: Artist` aqui explicitamente — é o mesmo truque
+// que já era usado (e funcionava) em trackController.getRecentlyPlayed.
+// Quando esses artistas virarem Users de verdade, isso deve ser revisto.
+const ARTIST_POPULATE = { path: "artist", model: Artist, select: "name avatar genre verified" };
+const TRACK_ARTISTS_POPULATE = { path: "artists", model: Artist, select: "name avatar genre verified" };
 
 exports.createAlbum = async (req, res) => {
   try {
@@ -15,10 +27,13 @@ exports.createAlbum = async (req, res) => {
       ...req.body,
       artist: req.user.id
     });
-    
+
     await album.save();
+    // Aqui NÃO forçamos model: Artist — req.user.id é um User real
+    // (quem está logado criando o álbum), então o populate segue o
+    // ref do schema (User) normalmente.
     await album.populate("artist", "username name avatar");
-    
+
     await cacheService.invalidatePattern('albums:*');
     res.status(201).json(album);
   } catch (error) {
@@ -30,7 +45,7 @@ exports.createAlbum = async (req, res) => {
 exports.getAlbums = async (req, res) => {
   try {
     const albums = await Album.find()
-      .populate("artist", "username name avatar")
+      .populate(ARTIST_POPULATE)
       .sort({ releaseDate: -1 });
     res.json(albums);
   } catch (error) {
@@ -44,7 +59,7 @@ exports.getAlbumsCursor = async (req, res) => {
     const cursor = req.query.cursor || null;
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
     const artistId = req.query.artistId || null;
-    
+
     let result;
     if (artistId) {
       result = await cursorPagination.paginateArtistAlbums(artistId, cursor, limit);
@@ -60,13 +75,13 @@ exports.getAlbumsCursor = async (req, res) => {
           ];
         }
       }
-      
+
       const albums = await Album.find(query)
-        .populate("artist", "name avatar")
+        .populate(ARTIST_POPULATE)
         .sort({ releaseDate: -1, _id: -1 })
         .limit(limit + 1)
         .lean();
-      
+
       const hasMore = albums.length > limit;
       const nextCursor = hasMore ? albums[limit - 1]._id : null;
       result = {
@@ -77,7 +92,7 @@ exports.getAlbumsCursor = async (req, res) => {
         count: albums.length > limit ? limit : albums.length
       };
     }
-    
+
     res.json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -89,17 +104,17 @@ exports.getAlbumById = async (req, res) => {
     const cacheKey = `album:${req.params.id}`;
     const album = await cacheService.getOrSet(cacheKey, async () => {
       return await Album.findById(req.params.id)
-        .populate("artist", "username name avatar")
+        .populate(ARTIST_POPULATE)
         .populate({
           path: "tracks",
-          populate: { path: "artists", select: "name username avatar" }
+          populate: TRACK_ARTISTS_POPULATE
         });
     }, 600);
-      
+
     if (!album) {
       return res.status(404).json({ message: "Álbum não encontrado" });
     }
-    
+
     res.json(album);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -109,21 +124,21 @@ exports.getAlbumById = async (req, res) => {
 exports.deleteAlbum = async (req, res) => {
   try {
     const album = await Album.findById(req.params.id);
-    
+
     if (!album) {
       return res.status(404).json({ message: "Álbum não encontrado" });
     }
-    
+
     if (album.artist.toString() !== req.user.id && req.user.role !== "admin") {
       return res.status(403).json({ message: "Não autorizado a deletar este álbum" });
     }
-    
+
     await Album.findByIdAndDelete(req.params.id);
     await AlbumLike.deleteMany({ album: req.params.id });
-    
+
     await cacheService.invalidatePattern('albums:*');
     await cacheService.invalidatePattern(`album:${req.params.id}`);
-    
+
     res.json({ message: "Álbum deletado com sucesso" });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -147,9 +162,9 @@ exports.likeAlbum = async (req, res) => {
 
     await AlbumLike.create({ user: userId, album: albumId });
     await Album.findByIdAndUpdate(albumId, { $inc: { likeCount: 1 } });
-    
+
     await cacheService.invalidatePattern(`album:${albumId}`);
-    
+
     res.json({ success: true, liked: true, message: "Álbum curtido com sucesso" });
   } catch (error) {
     console.error("Erro ao curtir álbum:", error);
@@ -168,9 +183,9 @@ exports.unlikeAlbum = async (req, res) => {
     }
 
     await Album.findByIdAndUpdate(albumId, { $inc: { likeCount: -1 } });
-    
+
     await cacheService.invalidatePattern(`album:${albumId}`);
-    
+
     res.json({ success: true, liked: false, message: "Like removido com sucesso" });
   } catch (error) {
     console.error("Erro ao remover like do álbum:", error);
@@ -184,9 +199,9 @@ exports.checkLike = async (req, res) => {
     const userId = req.user.id;
 
     const like = await AlbumLike.findOne({ user: userId, album: albumId });
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       liked: !!like,
       data: { liked: !!like }
     });

@@ -64,7 +64,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#090909] text-white flex overflow-hidden">
+    <div className="min-h-screen bg-[#090909] text-white flex overflow-x-hidden overflow-y-auto lg:overflow-hidden">
       {/* Lado visual */}
       <div className="hidden lg:flex w-[48%] relative border-r border-red-950 overflow-hidden bg-gradient-to-br from-[#140202] via-[#090909] to-black">
         {/* glow */}
@@ -118,12 +118,12 @@ export default function LoginPage() {
       </div>
 
       {/* Form */}
-      <div className="flex-1 flex items-center justify-center px-6 py-12 relative">
+      <div className="flex-1 flex items-center justify-center px-4 md:px-6 py-8 md:py-12 relative">
         <div className="absolute w-[300px] h-[300px] bg-red-700/10 blur-[120px] rounded-full top-0" />
 
         <div className="w-full max-w-md relative z-10">
           {/* Mobile logo */}
-          <div className="flex lg:hidden items-center justify-center gap-3 mb-12">
+          <div className="flex lg:hidden items-center justify-center gap-3 mb-8 md:mb-12">
             <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center">
               <span className="text-2xl">🐞</span>
             </div>
@@ -136,10 +136,10 @@ export default function LoginPage() {
           </div>
 
           <div className="mb-10">
-            <h2 className="text-5xl font-black tracking-tight leading-none">
+            <h2 className="text-4xl md:text-5xl font-black tracking-tight leading-none">
               Login
             </h2>
-            <p className="mt-4 text-zinc-400 leading-relaxed">
+            <p className="mt-3 md:mt-4 text-sm md:text-base text-zinc-400 leading-relaxed">
               Conecte-se à comunidade de artistas independentes.
             </p>
           </div>
@@ -154,7 +154,7 @@ export default function LoginPage() {
                 onChange={handleChange}
                 placeholder="voce@email.com"
                 required
-                className="w-full bg-[#111111] border border-zinc-800 focus:border-red-600 focus:ring-4 focus:ring-red-900/40 transition-all rounded-xl px-4 py-4 outline-none"
+                className="w-full bg-[#111111] border border-zinc-800 focus:border-red-600 focus:ring-4 focus:ring-red-900/40 transition-all rounded-xl px-4 py-3 md:py-4 outline-none"
               />
             </div>
 
@@ -167,7 +167,7 @@ export default function LoginPage() {
                 onChange={handleChange}
                 placeholder="••••••••"
                 required
-                className="w-full bg-[#111111] border border-zinc-800 focus:border-red-600 focus:ring-4 focus:ring-red-900/40 transition-all rounded-xl px-4 py-4 outline-none"
+                className="w-full bg-[#111111] border border-zinc-800 focus:border-red-600 focus:ring-4 focus:ring-red-900/40 transition-all rounded-xl px-4 py-3 md:py-4 outline-none"
               />
             </div>
 
@@ -180,13 +180,13 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full h-14 rounded-xl bg-red-600 hover:bg-red-500 transition-all font-bold text-lg shadow-[0_0_30px_rgba(255,0,0,0.25)] disabled:opacity-60"
+              className="w-full h-12 md:h-14 rounded-xl bg-red-600 hover:bg-red-500 transition-all font-bold text-base md:text-lg shadow-[0_0_30px_rgba(255,0,0,0.25)] disabled:opacity-60"
             >
               {isLoading ? 'Carregando...' : 'Entrar'}
             </button>
           </form>
 
-          <div className="flex items-center gap-4 my-8">
+          <div className="flex items-center gap-4 my-6 md:my-8">
             <div className="h-px flex-1 bg-zinc-800" />
             <span className="text-zinc-500 text-sm">ou</span>
             <div className="h-px flex-1 bg-zinc-800" />
@@ -203,7 +203,7 @@ export default function LoginPage() {
             </button>
           </div>
 
-          <div className="mt-12 text-center text-xs text-zinc-600 leading-relaxed">
+          <div className="mt-8 md:mt-12 text-center text-xs text-zinc-600 leading-relaxed">
             The Experience Lab © 2026 — trabalhadores do mundo, uni-vos.
           </div>
         </div>

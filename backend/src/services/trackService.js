@@ -2,6 +2,7 @@ const Track = require("../models/Track");
 const Artist = require("../models/Artist");
 const Like = require("../models/Like");
 const User = require("../models/User");
+const cacheService = require("./cacheService");
 
 exports.getTracks = async () => {
   const tracks = await Track.find()
@@ -22,7 +23,6 @@ exports.getTracks = async () => {
 };
 
 exports.getTrackById = async (id) => {
-
   return Track.findById(id)
     .populate({
       path: "artists",
@@ -34,24 +34,35 @@ exports.getTrackById = async (id) => {
 };
 
 exports.createTrack = async (data) => {
-  return Track.create(data);
+  const track = await Track.create(data);
+
+  // invalida o cache da página de cada artista envolvido,
+  // senão a track nova não aparece até o TTL expirar
+  for (const artistId of track.artists) {
+    await cacheService.invalidateArtist(artistId);
+  }
+
+  return track;
 };
 
 exports.incrementPlay = async (id) => {
-  return Track.findByIdAndUpdate(
+  const track = await Track.findByIdAndUpdate(
     id,
     { $inc: { playCount: 1 } },
     { new: true }
-  );
+  ).select("artists playCount");
+
+  // como "Populares" é ordenado por playCount, invalida pra
+  // refletir a nova posição no ranking
+  if (track) {
+    for (const artistId of track.artists) {
+      await cacheService.invalidateArtist(artistId);
+    }
+  }
+
+  return track;
 };
 
-/**
- * Like em uma track:
- * 1. Cria documento na collection Like (único por user+track)
- * 2. Incrementa likeCount na Track
- * 3. Adiciona trackId ao array likedTracks do User
- * Retorna { likeCount, alreadyLiked } para o controller tratar
- */
 exports.likeTrack = async (trackId, userId) => {
 
   // Verifica se já curtiu
@@ -72,7 +83,6 @@ exports.likeTrack = async (trackId, userId) => {
     { new: true, select: "likeCount" }
   );
 
-  // Adiciona ao perfil do usuário (sem duplicatas)
   await User.findByIdAndUpdate(
     userId,
     { $addToSet: { likedTracks: trackId } }
@@ -81,12 +91,6 @@ exports.likeTrack = async (trackId, userId) => {
   return { likeCount: track.likeCount, alreadyLiked: false };
 };
 
-/**
- * Unlike em uma track:
- * 1. Remove documento da collection Like
- * 2. Decrementa likeCount na Track (mínimo 0)
- * 3. Remove trackId do array likedTracks do User
- */
 exports.unlikeTrack = async (trackId, userId) => {
 
   const existing = await Like.findOneAndDelete({ user: userId, track: trackId });
@@ -96,14 +100,12 @@ exports.unlikeTrack = async (trackId, userId) => {
     return { likeCount: track?.likeCount ?? 0, notLiked: true };
   }
 
-  // Garante que likeCount não vá abaixo de 0
   const track = await Track.findByIdAndUpdate(
     trackId,
     [{ $set: { likeCount: { $max: [{ $subtract: ["$likeCount", 1] }, 0] } } }],
     { new: true, select: "likeCount" }
   );
 
-  // Remove do perfil do usuário
   await User.findByIdAndUpdate(
     userId,
     { $pull: { likedTracks: trackId } }
@@ -113,7 +115,15 @@ exports.unlikeTrack = async (trackId, userId) => {
 };
 
 exports.deleteTrack = async (id) => {
-  return Track.findByIdAndDelete(id);
+  const track = await Track.findByIdAndDelete(id);
+
+  if (track) {
+    for (const artistId of track.artists) {
+      await cacheService.invalidateArtist(artistId);
+    }
+  }
+
+  return track;
 };
 
 /**

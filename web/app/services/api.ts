@@ -1,5 +1,4 @@
-// src/services/api.ts  — versão Web (Next.js)
-// Adaptado do mobile: remove lógica de IP do Expo, usa NEXT_PUBLIC_API_URL
+// src/services/api.ts
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -23,15 +22,28 @@ export interface Track {
   trackNumber: number;
 }
 
-// ─── CONFIG ────────────────────────────────────────────────────────────────
-// No .env.local da web: NEXT_PUBLIC_API_URL=http://localhost:5000/api
-
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000/api';
 
 const TIMEOUT_MS = 15000;
 const MAX_RETRIES = 2;
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
+
+/**
+ * Lê o token JWT do localStorage onde o Zustand persiste o authStore.
+ * Retorna null se não estiver no browser ou se o usuário não estiver logado.
+ */
+const getStoredToken = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('nota-vermelha-auth');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.state?.token ?? null;
+  } catch {
+    return null;
+  }
+};
 
 const fetchWithTimeout = async (
   url: string,
@@ -72,9 +84,6 @@ const fetchWithRetry = async (
   throw lastError ?? new Error('Falha após múltiplas tentativas');
 };
 
-// Lê o token do Zustand sem criar dependência circular
-// (authStore importa api.ts, então api.ts NÃO importa authStore)
-// Em vez disso, funções que precisam de token recebem o token como parâmetro.
 const authHeader = (token: string) => ({
   'Content-Type': 'application/json',
   Authorization: `Bearer ${token}`,
@@ -147,11 +156,17 @@ export const trackService = {
     }
   },
 
+  // ✅ CORRIGIDO: envia o token JWT quando o usuário está logado,
+  // permitindo que o backend salve a track no recentlyPlayed via optionalAuth.
   registerPlay: async (trackId: string): Promise<ApiResponse<{ playCount: number }>> => {
     try {
+      const token = getStoredToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const response = await fetchWithTimeout(
         `${API_URL}/tracks/${trackId}/play`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+        { method: 'POST', headers },
         5000
       );
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);

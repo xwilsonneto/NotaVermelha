@@ -19,7 +19,6 @@ trim:true,
 minlength:3
 },
 
-// Nome de exibição (ouvintes e bandas)
 name:{
 type:String,
 trim:true,
@@ -38,7 +37,6 @@ enum:["listener","artist","band","label","admin"],
 default:"listener"
 },
 
-// Referência ao documento Artist (preenchido quando role === "band" | "artist")
 artistId:{
 type:mongoose.Schema.Types.ObjectId,
 ref:"Artist"
@@ -49,13 +47,24 @@ type:mongoose.Schema.Types.ObjectId,
 ref:"ArtistProfile"
 },
 
-// Tracks que o usuário curtiu
 likedTracks:[{
 type:mongoose.Schema.Types.ObjectId,
 ref:"Track"
 }],
 
-// Campos exclusivos de banda/artista independente
+// Histórico de reprodução — últimas 50 tracks ouvidas (mais recente primeiro)
+recentlyPlayed:[{
+track:{
+  type:mongoose.Schema.Types.ObjectId,
+  ref:"Track",
+  required:true
+},
+playedAt:{
+  type:Date,
+  default:Date.now
+}
+}],
+
 bandInfo:{
 genre:{ type:String, default:"" },
 city:{ type:String, default:"" },
@@ -122,20 +131,14 @@ default:true
 );
 
 userSchema.pre("save", async function(next){
-
 if(!this.isModified("password")) return next();
-
 const salt = await bcrypt.genSalt(10);
 this.password = await bcrypt.hash(this.password,salt);
-
 next();
-
 });
 
 userSchema.methods.comparePassword = async function(password){
-
 return bcrypt.compare(password,this.password);
-
 };
 
 module.exports = mongoose.model("User",userSchema);

@@ -43,7 +43,14 @@ const albumSchema = new mongoose.Schema({
     default: 0
   }
 
-}, { timestamps: true });
+}, {
+  timestamps: true,
+  // Sem isso, o virtual "tracks" populado nunca aparece no JSON de resposta
+  // (res.json() usa toJSON() por baixo dos panos, e por padrão o Mongoose
+  // omite virtuals). Era por isso que todo álbum vinha com "0 faixas".
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true },
+});
 
 albumSchema.virtual("tracks", {
   ref: "Track",
