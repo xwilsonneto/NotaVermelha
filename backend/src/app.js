@@ -17,6 +17,7 @@ const authRoutes = require("./routes/authRoutes");
 const feedRoutes = require("./routes/feedRoutes");
 const searchRoutes = require("./routes/searchRoutes");
 const postRoutes = require("./routes/postRoutes"); // ✅ Adicionado
+const uploadRoutes = require('./routes/upload');
 
 const app = express();
 
@@ -65,6 +66,7 @@ app.use("/api/playlists", playlistRoutes);
 app.use("/api/feed",      feedRoutes);
 app.use("/api/posts",     postRoutes); // ✅ Adicionado
 app.use("/api/search",    searchRoutes);
+app.use('/api/upload', uploadRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({

@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/app/store/authStore';
-import { Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, AlertCircle, Camera } from 'lucide-react';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000/api'
 
 type AccountType = 'listener' | 'creator' | null;
 type CreatorKind = 'user' | 'band';
@@ -56,10 +58,23 @@ export default function RegisterContent() {
     displayName?: string;
     accountType?: string;
     terms?: string;
+    profileImage?: string;
   }>({});
 
+  // ── avatar (mesmo padrão do ProfileTab) ────────────────────────────────
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [preview,    setPreview]    = useState<string | null>(null)
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setAvatarFile(file)
+    setPreview(URL.createObjectURL(file))
+    setFieldErrors((prev) => ({ ...prev, profileImage: undefined }))
+  }
+
   // Aguarda hidratação do Zustand antes de redirecionar
-  // Evita o loop: middleware lê cookie → ok, mas Zustand ainda não hidratou → redireciona de novo
   useEffect(() => {
     if (_hasHydrated && isAuthenticated) {
       const redirect = searchParams.get('redirect') ?? '/';
@@ -88,7 +103,12 @@ export default function RegisterContent() {
       errors.confirmPassword = 'As senhas não coincidem';
     }
 
-    setFieldErrors((prev) => ({ ...prev, ...errors }));
+    setFieldErrors((prev) => ({
+      ...prev,
+      email: errors.email,
+      password: errors.password,
+      confirmPassword: errors.confirmPassword,
+    }));
   }, [step1.email, step1.password, step1.confirmPassword]);
 
   // Validação username
@@ -219,6 +239,7 @@ export default function RegisterContent() {
       return;
     }
 
+    // 1. Registra o usuário com JSON (register espera objeto, não FormData)
     const ok = await register({
       email: step1.email,
       password: step1.password,
@@ -228,14 +249,39 @@ export default function RegisterContent() {
       creatorKind: step2.creatorKind,
     });
 
-    if (ok) {
-      const redirect = searchParams.get('redirect') ?? '/';
-      router.replace(redirect);
+    if (!ok) return;
+
+    // 2. Se houver avatar, faz upload separado com o token salvo no store
+    const token = useAuthStore.getState().token;
+    if (avatarFile && token) {
+      const formData = new FormData();
+      formData.append('avatar', avatarFile);
+      try {
+        const uploadRes = await fetch(`${API_URL}/users/me/avatar`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+
+        if (uploadRes.ok) {
+          // 3. Rebusca o user atualizado para atualizar o store com o novo avatar
+          const meRes = await fetch(`${API_URL}/users/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (meRes.ok) {
+            const updatedUser = await meRes.json();
+            useAuthStore.setState({ user: updatedUser });
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao enviar avatar:', err);
+      }
     }
+
+    const redirect = searchParams.get('redirect') ?? '/';
+    router.replace(redirect);
   };
 
-  // Não renderiza o form enquanto verifica sessão existente
-  // (evita flash do register antes do redirect se já estiver logado)
   if (!_hasHydrated) {
     return (
       <div className="min-h-screen bg-[#090909] flex items-center justify-center">
@@ -276,7 +322,6 @@ export default function RegisterContent() {
               Uma plataforma onde a partilha é a válvula propulsora, e o amor camarada é lei.
             </p>
 
-            {/* Indicador de steps */}
             <div className="mt-12 flex items-center gap-6">
               <div className="flex items-center gap-3">
                 <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all duration-300 ${
@@ -492,6 +537,60 @@ export default function RegisterContent() {
               </div>
 
               <form onSubmit={handleStep2Submit} className="space-y-5">
+                {/* 🖼️ AVATAR — mesmo padrão do ProfileTab */}
+                <div className="flex flex-col items-center gap-4">
+                  <div className="relative group">
+                    <div className="w-28 h-28 rounded-full overflow-hidden ring-2 ring-zinc-700 group-hover:ring-red-500/60 transition-all">
+                      {preview ? (
+                        <img src={preview} alt="Preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full bg-[#111111] flex items-center justify-center text-3xl font-bold text-zinc-500">
+                          {step2.displayName?.[0]?.toUpperCase() || '?'}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center shadow-lg transition-colors"
+                    >
+                      <Camera size={16} />
+                    </button>
+
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleFileChange}
+                    />
+                  </div>
+
+                  {avatarFile && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-zinc-400 truncate max-w-[140px]">{avatarFile.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => { setPreview(null); setAvatarFile(null) }}
+                        className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-zinc-600">JPG, PNG ou WebP · máx. 5 MB</p>
+
+                  {fieldErrors.profileImage && (
+                    <p className="text-xs text-red-400 flex items-center gap-1">
+                      <AlertCircle size={12} /> {fieldErrors.profileImage}
+                    </p>
+                  )}
+                </div>
+
+                <div className="border-t border-zinc-800/60" />
+
                 {/* TIPO DE CONTA */}
                 <div>
                   <label className="block text-sm text-zinc-400 mb-3">Tipo de conta</label>

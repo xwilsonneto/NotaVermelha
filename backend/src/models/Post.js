@@ -17,7 +17,7 @@ const postSchema = new mongoose.Schema(
     },
     type: {
       type:    String,
-      enum:    ["text", "music", "event"],
+      enum:    ["text", "music", "event", "repost"],
       default: "text",
     },
     attachments: [
@@ -27,14 +27,30 @@ const postSchema = new mongoose.Schema(
         meta: { type: mongoose.Schema.Types.Mixed },
       },
     ],
+    // Track anexada (quando type === "music")
+    track: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Track",
+    },
     likes:   [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    // ✅ Novo: reposts (retweets)
+    // Contador de reposts (quem repostou o post original)
     reposts: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    // Repost de verdade: referência ao post original
+    originalPost: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Post",
+      default: null,
+    },
+    isRepost: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );
 
 postSchema.index({ author: 1, createdAt: -1 });
-postSchema.index({ createdAt: -1 });   // índice para o feed geral
+postSchema.index({ createdAt: -1 });
+postSchema.index({ originalPost: 1, author: 1 }, { unique: true, sparse: true }); // evita repost duplicado do mesmo user
 
 module.exports = mongoose.model("Post", postSchema);

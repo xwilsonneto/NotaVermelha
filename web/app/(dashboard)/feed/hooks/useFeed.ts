@@ -106,12 +106,15 @@ export function useFeed(currentUserId: string) {
     }
   }, []);
 
-  const createPost = useCallback(async (text: string): Promise<boolean> => {
+  const createPost = useCallback(async (
+    text: string,
+    attachments?: { kind: string; url: string; meta?: any }[]
+  ): Promise<boolean> => {
     try {
       const res = await fetch(`${API_URL}/posts`, {
         method:  'POST',
         headers: authHeader(),
-        body:    JSON.stringify({ text }),
+        body:    JSON.stringify({ text, attachments }),
       });
 
       const data = await res.json();

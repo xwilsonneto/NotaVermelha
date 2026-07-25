@@ -3,10 +3,7 @@
 import { Heart, MessageCircle, Repeat2, Share } from 'lucide-react';
 import type { Post } from '@/app/(dashboard)/feed/hooks/usePosts';
 
-// Pega o ID do usuário logado do cookie/session — ajuste para o seu contexto de auth
 function useCurrentUserId(): string {
-  // Se você usa next-auth, useSession, ou contexto próprio, troque aqui.
-  // Exemplo com um contexto simples ou localStorage:
   if (typeof window !== 'undefined') {
     return localStorage.getItem('userId') ?? '';
   }
@@ -33,13 +30,13 @@ export default function FeedCard({ post, onToggleLike }: FeedCardProps) {
   const liked = post.likes.includes(currentUserId);
 
   return (
-    <article className="rounded-xl w-[582px] border border-zinc-800 bg-zinc-950 overflow-hidden">
+    <article className="rounded-xl w-full border border-zinc-800 bg-zinc-950 overflow-hidden">
 
-      <div className="p-4">
-        <div className="flex gap-3">
+      <div className="p-3 md:p-4">
+        <div className="flex gap-2.5 md:gap-3">
 
           {/* Avatar */}
-          <div className="w-10 h-10 rounded-full bg-zinc-800 shrink-0 overflow-hidden">
+          <div className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-zinc-800 shrink-0 overflow-hidden">
             {post.author.avatar && (
               <img
                 src={post.author.avatar}
@@ -50,19 +47,19 @@ export default function FeedCard({ post, onToggleLike }: FeedCardProps) {
           </div>
 
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-[15px]">
+            <div className="flex items-center gap-1.5 md:gap-2">
+              <span className="font-semibold text-sm md:text-[15px]">
                 {post.author.name}
               </span>
-              <span className="text-zinc-500 text-sm">
+              <span className="text-zinc-500 text-xs md:text-sm">
                 @{post.author.username}
               </span>
-              <span className="text-zinc-600 text-xs ml-auto">
+              <span className="text-zinc-600 text-[10px] md:text-xs ml-auto">
                 {timeAgo(post.createdAt)}
               </span>
             </div>
 
-            <p className="mt-1 text-[15px] leading-6 whitespace-pre-wrap">
+            <p className="mt-1 text-sm md:text-[15px] leading-6 whitespace-pre-wrap">
               {post.text}
             </p>
           </div>
@@ -70,30 +67,30 @@ export default function FeedCard({ post, onToggleLike }: FeedCardProps) {
         </div>
       </div>
 
-      <div className="border-t border-zinc-800 h-11 px-4 flex items-center gap-8">
+      <div className="border-t border-zinc-800 h-10 md:h-11 px-3 md:px-4 flex items-center gap-5 md:gap-8">
 
         <button
           onClick={() => onToggleLike(post._id, currentUserId)}
-          className={`flex items-center gap-1.5 transition ${
+          className={`flex items-center gap-1 md:gap-1.5 transition ${
             liked ? 'text-red-400' : 'text-zinc-500 hover:text-red-400'
           }`}
         >
-          <Heart size={18} fill={liked ? 'currentColor' : 'none'} />
+          <Heart size={16} className="md:w-[18px] md:h-[18px]" fill={liked ? 'currentColor' : 'none'} />
           {post.likes.length > 0 && (
             <span className="text-xs">{post.likes.length}</span>
           )}
         </button>
 
-        <button className="flex items-center gap-2 text-zinc-500 hover:text-blue-400 transition">
-          <MessageCircle size={18} />
+        <button className="flex items-center gap-1.5 md:gap-2 text-zinc-500 hover:text-blue-400 transition">
+          <MessageCircle size={16} className="md:w-[18px] md:h-[18px]" />
         </button>
 
-        <button className="flex items-center gap-2 text-zinc-500 hover:text-green-400 transition">
-          <Repeat2 size={18} />
+        <button className="flex items-center gap-1.5 md:gap-2 text-zinc-500 hover:text-green-400 transition">
+          <Repeat2 size={16} className="md:w-[18px] md:h-[18px]" />
         </button>
 
-        <button className="flex items-center gap-2 text-zinc-500 hover:text-white transition">
-          <Share size={18} />
+        <button className="flex items-center gap-1.5 md:gap-2 text-zinc-500 hover:text-white transition">
+          <Share size={16} className="md:w-[18px] md:h-[18px]" />
         </button>
 
       </div>

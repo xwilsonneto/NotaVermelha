@@ -7,7 +7,7 @@ export default function ComposerCharacterCount({ remaining, max }: Props) {
   const used    = max - remaining;
   const percent = Math.min(used / max, 1);
   const radius  = 13;
-  const circumference = 2 * Math.PI * radius; // ≈ 81.68
+  const circumference = 2 * Math.PI * radius;
 
   const isWarning  = remaining <= 50 && remaining > 20;
   const isDanger   = remaining <= 20;
@@ -16,16 +16,15 @@ export default function ComposerCharacterCount({ remaining, max }: Props) {
   const trackColor  = '#27272a';
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2 md:gap-3">
 
-      <div className="relative w-8 h-8">
+      <div className="relative w-7 h-7 md:w-8 md:h-8">
         <svg
           width="32"
           height="32"
           viewBox="0 0 32 32"
-          className="rotate-[-90deg]"
+          className="rotate-[-90deg] w-full h-full"
         >
-          {/* Trilha de fundo */}
           <circle
             cx="16"
             cy="16"
@@ -34,7 +33,6 @@ export default function ComposerCharacterCount({ remaining, max }: Props) {
             strokeWidth="3"
             fill="none"
           />
-          {/* Progresso */}
           <circle
             cx="16"
             cy="16"

@@ -70,13 +70,16 @@ export function usePosts(currentUserId: string) {
   useEffect(() => { fetchPosts(true); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Criar post ───────────────────────────────────────────────────────────────
-  const createPost = useCallback(async (text: string): Promise<boolean> => {
+  const createPost = useCallback(async (
+      text: string,
+      attachments?: { kind: string; url: string; meta?: any }[]
+    ): Promise<boolean> => {
     try {
       const res = await fetch('/api/posts', {
         method:      'POST',
         credentials: 'include',
         headers:     { 'Content-Type': 'application/json' },
-        body:        JSON.stringify({ text }),
+        body:        JSON.stringify({ text, attachments }),
       });
 
       // ✅ Lê o body UMA única vez

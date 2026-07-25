@@ -9,7 +9,7 @@ export default function Feed() {
   const currentUserId = user?._id ?? '';
 
   return (
-    <div className="max-w-2xl w-full mx-auto">
+    <div className="max-w-2xl w-full mx-auto px-0">
       <FeedSection currentUserId={currentUserId} />
     </div>
   );

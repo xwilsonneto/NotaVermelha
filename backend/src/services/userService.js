@@ -1,9 +1,15 @@
 // services/userService.js
 const User = require("../models/User");
 const Follow = require("../models/Follow");
+const UserActivity = require("../models/UserActivity");
+const Post = require("../models/Post");
 
 exports.getUserById = async (id) => {
   return User.findById(id).select("-password");
+};
+
+exports.getUserByUsername = async (username) => {
+  return User.findOne({ username: username.toLowerCase() }).select("-password");
 };
 
 exports.updateUser = async (userId, data) => {
@@ -19,14 +25,9 @@ exports.updateUser = async (userId, data) => {
 };
 
 exports.updateAvatar = async (userId, file) => {
-  // Cloudinary salva a URL pública em file.path
-  // diskStorage salva o caminho local em file.path também
   const avatarUrl = file.path;
 
-  // Tenta deletar o avatar antigo do Cloudinary se existir
-  if (file.public_id === undefined) {
-    // fallback local — não há nada para deletar no Cloudinary
-  } else {
+  if (file.public_id !== undefined) {
     try {
       const cloudinary = require("cloudinary").v2;
       const user = await User.findById(userId).select("avatar");
@@ -53,16 +54,87 @@ exports.updateAvatar = async (userId, file) => {
 exports.followUser = async (followerId, followingId) => {
   const existing = await Follow.findOne({
     follower: followerId,
-    following: followingId,
+    followingUser: followingId,
   });
 
   if (existing) return existing;
 
-  const follow = new Follow({ follower: followerId, following: followingId });
+  const follow = new Follow({ follower: followerId, followingUser: followingId });
   await follow.save();
+
+  await User.findByIdAndUpdate(followerId, { $inc: { followingCount: 1 } });
+  await User.findByIdAndUpdate(followingId, { $inc: { followersCount: 1 } });
+
   return follow;
 };
 
 exports.unfollowUser = async (followerId, followingId) => {
-  return Follow.findOneAndDelete({ follower: followerId, following: followingId });
+  const deleted = await Follow.findOneAndDelete({
+    follower: followerId,
+    followingUser: followingId,
+  });
+
+  if (deleted) {
+    await User.findByIdAndUpdate(followerId, { $inc: { followingCount: -1 } });
+    await User.findByIdAndUpdate(followingId, { $inc: { followersCount: -1 } });
+  }
+
+  return deleted;
+};
+
+// Busca atividades do usuário via recentlyPlayed (mesma fonte da home)
+exports.getUserActivity = async (userId, limit = 20) => {
+  const user = await User.findById(userId)
+    .select("recentlyPlayed")
+    .populate({
+      path: "recentlyPlayed.track",
+      populate: {
+        path: "artists album",
+        select: "name title cover coverUrl duration",
+      },
+    })
+    .lean();
+
+  if (!user || !Array.isArray(user.recentlyPlayed)) return [];
+
+  return user.recentlyPlayed
+    .sort((a, b) => new Date(b.playedAt).getTime() - new Date(a.playedAt).getTime())
+    .slice(0, limit)
+    .map((item) => ({
+      _id: item._id,
+      track: item.track,
+      playedAt: item.playedAt,
+      durationPlayed: item.track?.duration || 0,
+    }));
+};
+
+exports.getUserPosts = async (userId, page = 1, limit = 20) => {
+  const skip = (Math.max(1, page) - 1) * Math.min(limit, 50);
+
+  return Post.find({ author: userId })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(Math.min(limit, 50))
+    .populate("author", "name username avatar")
+    .populate({
+      path: "originalPost",
+      populate: [
+        { path: "author", select: "name username avatar" },
+        {
+          path: "track",
+          populate: {
+            path: "artists album",
+            select: "name title cover coverUrl",
+          },
+        },
+      ],
+    })
+    .populate({
+      path: "track",
+      populate: {
+        path: "artists album",
+        select: "name title cover coverUrl",
+      },
+    })
+    .lean();
 };
