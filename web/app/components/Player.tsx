@@ -1,6 +1,6 @@
-'use client';
+'use client'
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePlayerStore } from '../store/playerStore';
 import { trackService } from '../services/api';
@@ -27,53 +27,59 @@ export default function Player() {
 
   const router = useRouter();
   const audioRef = useRef<HTMLAudioElement>(null);
-  const currentTrackIdRef = useRef<string | null>(null);
+  const lastTrackIdRef = useRef<string | null>(null);
+  const isPlayingRef = useRef(isPlaying);
+  const lastAdvanceAtRef = useRef(0);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
   const [muted, setMuted] = useState(false);
 
-  // Um único efeito cuida de troca de faixa E de play/pause.
-  // Antes havia dois efeitos separados (um em [isPlaying], outro em
-  // [currentTrack]) que rodavam juntos quando currentTrack mudava e
-  // isPlaying já era `true`: o efeito de play/pause tentava tocar o
-  // <audio> ANTES do src ser setado, o `.play()` falhava e chamava
-  // setIsPlaying(false) — só que o efeito de troca de faixa, com uma
-  // closure "presa" no isPlaying antigo (true), tocava o áudio mesmo assim
-  // logo em seguida. Resultado: o áudio tocava de verdade (barra andando)
-  // mas o estado global isPlaying ficava false (botão preso em "play").
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+
+  // Avança com trava de tempo para nunca pular duas vezes
+  const advance = useCallback(() => {
+    const now = Date.now();
+    if (now - lastAdvanceAtRef.current < 1000) return;
+    lastAdvanceAtRef.current = now;
+
+    console.log('[player] advance', { currentIndex, queueLen: queue.length });
+    if (currentIndex < queue.length - 1) {
+      setCurrentIndex(currentIndex + 1);
+    } else {
+      setIsPlaying(false);
+    }
+  }, [currentIndex, queue.length, setCurrentIndex, setIsPlaying]);
+
+  const advanceRef = useRef(advance);
+  useEffect(() => { advanceRef.current = advance; });
+
+  // 1) Carrega a faixa SOMENTE quando a faixa muda (sem listener canplay)
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !currentTrack) return;
+    if (lastTrackIdRef.current === currentTrack._id) return;
+    lastTrackIdRef.current = currentTrack._id;
 
-    const isNewTrack = currentTrackIdRef.current !== currentTrack._id;
+    audio.src = currentTrack.audioUrl;
+    audio.load();
+    trackService.registerPlay(currentTrack._id)?.catch?.(() => {});
 
-    if (isNewTrack) {
-      currentTrackIdRef.current = currentTrack._id;
-      audio.src = currentTrack.audioUrl;
-      audio.load();
-      trackService.registerPlay(currentTrack._id);
-
-      const onCanPlay = () => {
-        if (isPlaying) {
-          audio.play().catch(() => setIsPlaying(false));
-        }
-      };
-
-      audio.addEventListener('canplay', onCanPlay, { once: true });
-      return () => {
-        audio.removeEventListener('canplay', onCanPlay);
-      };
-    }
-
-    // Mesma faixa: apenas alternando play/pause.
-    if (isPlaying) {
+    // play() antes do buffer estar pronto é seguro: o elemento enfileira
+    if (isPlayingRef.current) {
       audio.play().catch(() => setIsPlaying(false));
-    } else {
-      audio.pause();
     }
-  }, [currentTrack, isPlaying]);
+  }, [currentTrack, setIsPlaying]);
 
+  // 2) Play/pause apenas alterna estado (sem recarregar nada)
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !currentTrack) return;
+    if (isPlaying) audio.play().catch(() => setIsPlaying(false));
+    else audio.pause();
+  }, [isPlaying, currentTrack]);
+
+  // 3) Volume
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -85,14 +91,17 @@ export default function Player() {
     if (!audio) return;
     setProgress(audio.currentTime);
     setDuration(audio.duration || 0);
+    // Fallback: se o navegador não disparou 'ended' (stall no fim), avança aqui
+    if (audio.ended) advanceRef.current();
   };
 
-  const handleEnded = () => {
-    if (currentIndex < queue.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-    } else {
-      setIsPlaying(false);
-    }
+  const handleEnded = () => advanceRef.current();
+
+  // Se a faixa falhar (arquivo ruim/URL quebrada), pula em vez de travar
+  const handleError = () => {
+    console.warn('[player] audio error, pulando faixa', currentTrack?.title);
+    if (currentIndex < queue.length - 1) setCurrentIndex(currentIndex + 1);
+    else setIsPlaying(false);
   };
 
   const seek = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -104,6 +113,7 @@ export default function Player() {
   };
 
   const prev = () => {
+    if (progress > 3) { if (audioRef.current) audioRef.current.currentTime = 0; return; }
     if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
     else if (audioRef.current) audioRef.current.currentTime = 0;
   };
@@ -111,6 +121,60 @@ export default function Player() {
   const next = () => {
     if (currentIndex < queue.length - 1) setCurrentIndex(currentIndex + 1);
   };
+
+  const prevRef = useRef(prev);
+  const nextRef = useRef(next);
+  useEffect(() => { prevRef.current = prev; nextRef.current = next; });
+
+
+
+  // 4) Media Session: metadados + controles na tela bloqueada / notification shade
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !currentTrack) return;
+    const ms = navigator.mediaSession;
+
+    const artistName = Array.isArray(currentTrack.artists)
+      ? currentTrack.artists.map((a: any) => a.name ?? a).join(', ')
+      : '';
+    // capa precisa ser URL absoluta https (e com CORS liberado se for de outro domínio)
+    const cover = currentTrack.coverUrl
+      ? new URL(currentTrack.coverUrl, window.location.origin).href
+      : null;
+
+    ms.metadata = new MediaMetadata({
+      title: currentTrack.title,
+      artist: artistName,
+      album: currentTrack.album ?? currentTrack.album?.title ?? '',
+      artwork: cover
+        ? [
+            { src: cover, sizes: '96x96', type: 'image/jpeg' },
+            { src: cover, sizes: '256x256', type: 'image/jpeg' },
+            { src: cover, sizes: '512x512', type: 'image/jpeg' },
+          ]
+        : [],
+    });
+
+    const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
+      ['play', () => setIsPlaying(true)],
+      ['pause', () => setIsPlaying(false)],
+      ['previoustrack', () => prevRef.current()],
+      ['nexttrack', () => nextRef.current()],
+      ['seekbackward', () => {
+        const a = audioRef.current; if (a) a.currentTime = Math.max(0, a.currentTime - 10);
+      }],
+      ['seekforward', () => {
+        const a = audioRef.current; if (a) a.currentTime += 10;
+      }],
+    ];
+    for (const [action, fn] of handlers) {
+      try { ms.setActionHandler(action, fn); } catch {}
+    }
+    return () => {
+      for (const [action] of handlers) {
+        try { ms.setActionHandler(action, null); } catch {}
+      }
+    };
+  }, [currentTrack, setIsPlaying]);
 
   if (!currentTrack) return null;
 
@@ -125,6 +189,7 @@ export default function Player() {
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}
+        onError={handleError}
         onLoadedMetadata={handleTimeUpdate}
       />
 
@@ -143,7 +208,7 @@ export default function Player() {
         <div className="h-14 md:h-16">
           <div className="h-full max-w-screen-2xl mx-auto px-3 md:px-4 flex items-center gap-2 md:gap-4">
 
-            {/* Track info — clique abre a página do álbum da faixa atual */}
+            {/* Track info */}
             <div
               className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 cursor-pointer group/info"
               onClick={() => {

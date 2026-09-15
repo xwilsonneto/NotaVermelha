@@ -1,44 +1,24 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import {
-    Image,
-    Video,
-    Calendar,
-    Music2,
-    Smile,
-    MapPin
-} from 'lucide-react';
-
-/* ── emoji set nativo (sem lib externa) ─────────────────────────── */
-const EMOJIS = [
-  '😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃',
-  '😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙',
-  '😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔',
-  '🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','🤥',
-  '😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮',
-  '🤧','🥵','🥶','🥴','😵','🤯','🤠','🥳','😎','🤓',
-  '🧐','😕','😟','🙁','☹️','😮','😯','😲','😳','🥺',
-  '😦','😧','😨','😰','😥','😢','😭','😱','😖','😣',
-  '😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈',
-  '👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾',
-  '🤖','😺','😸','😹','😻','😼','😽','🙀','😿','😾',
-  '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔',
-  '❣️','💕','💞','💓','💗','💖','💘','💝','🔥','✨',
-  '🎵','🎶','🎸','🎤','🎧','🥁','🎹','🎺','🎻','🎼',
-  '👍','👎','👏','🙌','🤝','🤞','✌️','🤟','🤘','👌',
-];
+import { createPortal } from 'react-dom';
+import { Image, Video, Calendar, Music2, Smile, MapPin } from 'lucide-react';
+import EmojiPicker, {
+  Theme,
+  EmojiStyle,
+  Categories,
+} from 'emoji-picker-react';
 
 export interface ComposerToolbarProps {
-  /** chamado quando o usuário seleciona imagens do disco/câmera */
   onImageSelect?: (files: FileList) => void;
-  /** chamado quando o usuário clica em um emoji */
   onEmojiSelect?: (emoji: string) => void;
 }
 
 export default function ComposerToolbar({ onImageSelect, onEmojiSelect }: ComposerToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [pickerPos, setPickerPos] = useState({ left: 0, top: 0 });
 
   const handleImageClick = () => {
     fileInputRef.current?.click();
@@ -47,18 +27,23 @@ export default function ComposerToolbar({ onImageSelect, onEmojiSelect }: Compos
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0 && onImageSelect) {
       onImageSelect(e.target.files);
-      e.target.value = '';          // permite re-selecionar o mesmo arquivo
+      e.target.value = '';
     }
   };
 
-  const handleEmojiPick = (emoji: string) => {
-    onEmojiSelect?.(emoji);
-    setShowEmojiPicker(false);
+  const toggleEmojiPicker = () => {
+    if (!showEmojiPicker && emojiButtonRef.current) {
+      const rect = emojiButtonRef.current.getBoundingClientRect();
+      setPickerPos({
+        left: rect.left,
+        top: rect.top - 350, // 450 de altura + 10 de margem
+      });
+    }
+    setShowEmojiPicker((s) => !s);
   };
 
   return (
     <div className="flex items-center gap-0.5 md:gap-1 relative">
-      {/* input invisível para galeria / câmera */}
       <input
         type="file"
         accept="image/*"
@@ -74,36 +59,23 @@ export default function ComposerToolbar({ onImageSelect, onEmojiSelect }: Compos
         type="button"
         onClick={handleImageClick}
         title="Adicionar imagem"
-        className="
-          w-9 h-9 md:w-10 md:h-10
-          rounded-lg md:rounded-xl
-          hover:bg-zinc-800
-          transition
-          flex items-center justify-center
-          text-zinc-400 hover:text-red-400
-        "
+        className="w-9 h-9 md:w-10 md:h-10 rounded-lg md:rounded-xl hover:bg-zinc-800 transition flex items-center justify-center text-zinc-400 hover:text-red-400"
       >
         <Image size={16} className="md:w-[18px] md:h-[18px]" />
       </button>
 
       {/* ── SMILE / EMOJI ── */}
       <button
+        ref={emojiButtonRef}
         type="button"
-        onClick={() => setShowEmojiPicker((s) => !s)}
+        onClick={toggleEmojiPicker}
         title="Emoji"
-        className="
-          w-9 h-9 md:w-10 md:h-10
-          rounded-lg md:rounded-xl
-          hover:bg-zinc-800
-          transition
-          flex items-center justify-center
-          text-zinc-400 hover:text-red-400
-        "
+        className="w-9 h-9 md:w-10 md:h-10 rounded-lg md:rounded-xl hover:bg-zinc-800 transition flex items-center justify-center text-zinc-400 hover:text-red-400"
       >
         <Smile size={16} className="md:w-[18px] md:h-[18px]" />
       </button>
 
-      {/* ── placeholder buttons (ainda não funcionais) ── */}
+      {/* placeholder buttons */}
       <button type="button" className="w-9 h-9 md:w-10 md:h-10 rounded-lg md:rounded-xl hover:bg-zinc-800 transition flex items-center justify-center text-zinc-400 hover:text-red-400">
         <Video size={16} className="md:w-[18px] md:h-[18px]" />
       </button>
@@ -117,29 +89,43 @@ export default function ComposerToolbar({ onImageSelect, onEmojiSelect }: Compos
         <MapPin size={16} className="md:w-[18px] md:h-[18px]" />
       </button>
 
-      {/* ── EMOJI PICKER POPOVER ── */}
-      {showEmojiPicker && (
+      {/* ── EMOJI PICKER (portal: escapa do overflow-hidden) ── */}
+      {showEmojiPicker && createPortal(
         <>
-          {/* overlay para fechar ao clicar fora */}
           <div
             className="fixed inset-0 z-40"
             onClick={() => setShowEmojiPicker(false)}
           />
-          <div className="absolute bottom-full left-0 mb-2 z-50 w-[260px] md:w-[320px] max-h-[220px] md:max-h-[260px] overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-900 p-2.5 md:p-3 shadow-2xl custom-scroll">
-            <div className="grid grid-cols-8 gap-1 md:gap-1.5">
-              {EMOJIS.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={() => handleEmojiPick(emoji)}
-                  className="w-7 h-7 md:w-9 md:h-9 flex items-center justify-center text-base md:text-xl hover:bg-zinc-800 rounded-md md:rounded-lg transition"
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
+          <div
+            className="fixed z-50"
+            style={{ left: pickerPos.left, top: pickerPos.top }}
+          >
+            <EmojiPicker
+              onEmojiClick={(emojiData) => {
+                onEmojiSelect?.(emojiData.emoji);
+                setShowEmojiPicker(false);
+              }}
+              theme={Theme.DARK}
+              emojiStyle={EmojiStyle.GOOGLE}
+              width={350}
+              height={350}
+              lazyLoadEmojis
+              searchPlaceHolder="Buscar emoji"
+              previewConfig={{ showPreview: false }}
+              categories={[
+                { category: Categories.SMILEYS_PEOPLE, name: '' },
+                { category: Categories.ANIMALS_NATURE,  name: '' },
+                { category: Categories.FOOD_DRINK,       name: '' },
+                { category: Categories.TRAVEL_PLACES,    name: '' },
+                { category: Categories.ACTIVITIES,       name: '' },
+                { category: Categories.OBJECTS,          name: '' },
+                { category: Categories.SYMBOLS,          name: '' },
+                { category: Categories.FLAGS,            name: '' },
+              ]}
+            />
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
