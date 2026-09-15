@@ -128,28 +128,57 @@ export default function Player() {
 
 
 
-  // 4) Media Session: metadados + controles na tela bloqueada / notification shade
+    // 4) Media Session: metadados + controles na tela bloqueada / notification shade
   useEffect(() => {
     if (!('mediaSession' in navigator) || !currentTrack) return;
+
     const ms = navigator.mediaSession;
 
     const artistName = Array.isArray(currentTrack.artists)
       ? currentTrack.artists.map((a: any) => a.name ?? a).join(', ')
       : '';
-    // capa precisa ser URL absoluta https (e com CORS liberado se for de outro domínio)
+
     const cover = currentTrack.coverUrl
       ? new URL(currentTrack.coverUrl, window.location.origin).href
       : null;
 
+    if (cover) {
+      console.log('[MediaSession] capa:', cover);
+    }
+
     ms.metadata = new MediaMetadata({
       title: currentTrack.title,
       artist: artistName,
-      album: currentTrack.album ?? currentTrack.album?.title ?? '',
+      album:
+        typeof currentTrack.album === 'object'
+          ? currentTrack.album?.title ?? ''
+          : currentTrack.album ?? '',
       artwork: cover
         ? [
-            { src: cover, sizes: '96x96', type: 'image/jpeg' },
-            { src: cover, sizes: '256x256', type: 'image/jpeg' },
-            { src: cover, sizes: '512x512', type: 'image/jpeg' },
+            {
+              src: cover,
+              sizes: '96x96',
+            },
+            {
+              src: cover,
+              sizes: '128x128',
+            },
+            {
+              src: cover,
+              sizes: '192x192',
+            },
+            {
+              src: cover,
+              sizes: '256x256',
+            },
+            {
+              src: cover,
+              sizes: '384x384',
+            },
+            {
+              src: cover,
+              sizes: '512x512',
+            },
           ]
         : [],
     });
@@ -160,18 +189,26 @@ export default function Player() {
       ['previoustrack', () => prevRef.current()],
       ['nexttrack', () => nextRef.current()],
       ['seekbackward', () => {
-        const a = audioRef.current; if (a) a.currentTime = Math.max(0, a.currentTime - 10);
+        const a = audioRef.current;
+        if (a) a.currentTime = Math.max(0, a.currentTime - 10);
       }],
       ['seekforward', () => {
-        const a = audioRef.current; if (a) a.currentTime += 10;
+        const a = audioRef.current;
+        if (a) a.currentTime += 10;
       }],
     ];
+
     for (const [action, fn] of handlers) {
-      try { ms.setActionHandler(action, fn); } catch {}
+      try {
+        ms.setActionHandler(action, fn);
+      } catch {}
     }
+
     return () => {
       for (const [action] of handlers) {
-        try { ms.setActionHandler(action, null); } catch {}
+        try {
+          ms.setActionHandler(action, null);
+        } catch {}
       }
     };
   }, [currentTrack, setIsPlaying]);
