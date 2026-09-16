@@ -382,27 +382,40 @@ export default function PublicProfilePage() {
                     >
                       {/* Cabeçalho */}
                       <div className="flex items-center gap-3 mb-3">
+                        {/* Avatar do AUTOR ORIGINAL */}
                         <div className="w-8 h-8 rounded-lg overflow-hidden bg-zinc-800 shrink-0">
-                          {post.author?.avatar ? (
-                            <img src={post.author.avatar} alt="" className="w-full h-full object-cover" />
+                          {original.author?.avatar ? (
+                            <img
+                              src={original.author.avatar}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
                           ) : (
                             <Users size={14} className="text-zinc-600 m-auto" />
                           )}
                         </div>
+
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* Nome do AUTOR ORIGINAL */}
                             <span className="text-sm font-semibold text-zinc-200 truncate">
-                              {post.author?.name || post.author?.username || 'Usuário'}
+                              {original.author?.name || original.author?.username || 'Usuário'}
                             </span>
-                            {isRepost && (
+
+                            {/* Indicador de repost — mostra quem repostou */}
+                            {isRepost && post.author && (
                               <span className="flex items-center gap-1 text-[10px] text-zinc-500 font-medium">
                                 <Repeat2 size={10} />
-                                repostou
+                                <span>
+                                  {post.author.name || post.author.username || 'Usuário'} repostou
+                                </span>
                               </span>
                             )}
                           </div>
+
+                          {/* Data do post ORIGINAL */}
                           <span className="text-[11px] text-zinc-600">
-                            {timeAgo(post.createdAt)}
+                            {timeAgo(original.createdAt)}
                           </span>
                         </div>
                       </div>
@@ -483,7 +496,9 @@ export default function PublicProfilePage() {
                             <p className="text-[11px] text-zinc-500 truncate">
                               {track.artistName ||
                                 (Array.isArray(track.artists)
-                                  ? track.artists.map((a: any) => (typeof a === 'string' ? a : a.name)).join(', ')
+                                  ? track.artists
+                                      .map((a: any) => (typeof a === 'string' ? a : a.name))
+                                      .join(', ')
                                   : 'Artista desconhecido')}
                             </p>
                           </div>
@@ -497,15 +512,15 @@ export default function PublicProfilePage() {
                       <div className="flex items-center gap-4 mt-3 pt-3 border-t border-zinc-800/50">
                         <button className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-red-400 transition-colors">
                           <Heart size={14} />
-                          {formatCompactNumber(post.likes?.length || 0)}
+                          {formatCompactNumber(original.likes?.length || 0)}
                         </button>
                         <button className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-sky-400 transition-colors">
                           <MessageCircle size={14} />
-                          {formatCompactNumber(post.commentsCount || 0)}
+                          {formatCompactNumber(original.commentsCount || 0)}
                         </button>
                         <button className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-emerald-400 transition-colors">
                           <Repeat2 size={14} />
-                          {formatCompactNumber(post.reposts?.length || 0)}
+                          {formatCompactNumber(original.reposts?.length || 0)}
                         </button>
                       </div>
                     </div>

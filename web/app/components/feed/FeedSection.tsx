@@ -3,8 +3,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import FeedComposer from './composer/FeedComposer';
-import PostCard     from './PostCard';
-import { useFeed }  from '@/app/(dashboard)/feed/hooks/useFeed';
+import FeedCard from './FeedCard';
+import { useFeed } from '@/app/(dashboard)/feed/hooks/useFeed';
 import { useDashboard } from '@/app/(dashboard)/DashboardContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000/api';
@@ -34,28 +34,83 @@ export default function FeedSection({ currentUserId }: FeedSectionProps) {
   // Estado local de follow por autor de post
   const [followState, setFollowState] = useState<Record<string, boolean>>({});
 
-  const handleFollowToggle = useCallback(async (userId: string) => {
-    if (!token) return;
+  /**
+   * Resolve o ID do autor "real" do conteúdo — MESMA regra do FeedCard.
+   * Se for repost com originalPost POPULADO, o alvo é o autor ORIGINAL.
+   * Caso contrário, é o próprio autor do post.
+   */
+  const resolveTargetAuthorId = (post: any): string | null => {
+    const candidate =
+      post?.originalPost ?? post?.repostOf ?? post?.repost ?? null;
 
-    const currentlyFollowing = followState[userId] ?? false;
-    const method = currentlyFollowing ? 'DELETE' : 'POST';
+    const populated =
+      candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+        ? candidate
+        : null;
 
-    const res = await fetch(`${API_URL}/users/${userId}/follow`, {
-      method,
-      headers: { Authorization: `Bearer ${token}` },
+    const target = populated ? populated.author : post?.author;
+
+    if (!target) return null;
+    return typeof target === 'string' ? target : (target._id ?? null);
+  };
+
+  /**
+   * Inicializa o followState com o que a API já sabe (author.isFollowedByMe),
+   * sem sobrescrever toggles que o usuário já fez nessa sessão.
+   */
+  useEffect(() => {
+    setFollowState((prev) => {
+      const next = { ...prev };
+
+      posts.forEach((post: any) => {
+        const targetAuthorId = resolveTargetAuthorId(post);
+        const authorObj =
+          post?.originalPost && typeof post.originalPost === 'object'
+            ? post.originalPost.author
+            : post?.author;
+
+        if (
+          targetAuthorId &&
+          !(targetAuthorId in next) &&
+          authorObj &&
+          typeof authorObj === 'object' &&
+          'isFollowedByMe' in authorObj
+        ) {
+          next[targetAuthorId] = Boolean(authorObj.isFollowedByMe);
+        }
+      });
+
+      return next;
     });
+  }, [posts]);
 
-    if (!res.ok) throw new Error('Falha ao seguir/deixar de seguir');
+  const handleFollowToggle = useCallback(
+    async (userId: string) => {
+      if (!token) return;
 
-    setFollowState((prev) => ({ ...prev, [userId]: !currentlyFollowing }));
-  }, [token, followState]);
+      const currentlyFollowing = followState[userId] ?? false;
+      const method = currentlyFollowing ? 'DELETE' : 'POST';
+
+      const res = await fetch(`${API_URL}/users/${userId}/follow`, {
+        method,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) throw new Error('Falha ao seguir/deixar de seguir');
+
+      setFollowState((prev) => ({ ...prev, [userId]: !currentlyFollowing }));
+    },
+    [token, followState]
+  );
 
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
 
     const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting && !loadingMore) loadMore(); },
+      ([entry]) => {
+        if (entry.isIntersecting && !loadingMore) loadMore();
+      },
       { rootMargin: '200px' }
     );
     observer.observe(el);
@@ -71,13 +126,11 @@ export default function FeedSection({ currentUserId }: FeedSectionProps) {
 
   return (
     <section className="w-full max-w-[582px]">
-
       {/* Composer */}
       <FeedComposer onPost={handleCreatePost} />
 
       {/* Lista de posts */}
       <div className="mt-4 md:mt-6 rounded-xl md:rounded-2xl border border-zinc-800 bg-zinc-950 overflow-hidden">
-
         {/* Skeleton de carregamento inicial */}
         {loading && (
           <div className="divide-y divide-zinc-800">
@@ -111,23 +164,34 @@ export default function FeedSection({ currentUserId }: FeedSectionProps) {
         {!loading && !error && posts.length === 0 && (
           <div className="py-12 text-center">
             <p className="text-zinc-500 text-sm">Nenhuma publicação ainda.</p>
-            <p className="text-zinc-600 text-xs mt-1">Seja o primeiro a compartilhar algo!</p>
+            <p className="text-zinc-600 text-xs mt-1">
+              Seja o primeiro a compartilhar algo!
+            </p>
           </div>
         )}
 
         {/* Posts */}
-        {!loading && posts.map(post => (
-          <PostCard
-            key={post._id}
-            post={post}
-            currentUserId={currentUserId}
-            isFollowing={followState[post.author._id] ?? false}
-            onFollowToggle={handleFollowToggle}
-            onLike={toggleLike}
-            onRepost={toggleRepost}
-            onDelete={deletePost}
-          />
-        ))}
+        {!loading &&
+          posts.map((post) => {
+            const targetAuthorId = resolveTargetAuthorId(post);
+
+            return (
+              <FeedCard
+                key={post._id}
+                post={post}
+                currentUserId={currentUserId}
+                isFollowing={
+                  targetAuthorId
+                    ? (followState[targetAuthorId] ?? false)
+                    : false
+                }
+                onFollowToggle={handleFollowToggle}
+                onLike={toggleLike}
+                onRepost={toggleRepost}
+                onDelete={deletePost}
+              />
+            );
+          })}
 
         {/* Sentinel para scroll infinito */}
         {!loading && hasMore && (
@@ -144,7 +208,6 @@ export default function FeedSection({ currentUserId }: FeedSectionProps) {
             Você chegou ao fim do feed.
           </p>
         )}
-
       </div>
     </section>
   );

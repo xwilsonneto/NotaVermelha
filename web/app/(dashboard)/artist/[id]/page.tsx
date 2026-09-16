@@ -9,6 +9,7 @@ import {
   Music2,
   Pause,
   Play,
+  Shuffle,
   UserPlus,
   UserCheck,
   Globe,
@@ -63,16 +64,19 @@ export default function ArtistPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { token } = useDashboard();
-  const { play, currentTrack, isPlaying, setIsPlaying } = usePlayerStore();
+  const { play, playShuffled, currentTrack, isPlaying, setIsPlaying } =
+    usePlayerStore();
 
   const [artist, setArtist] = useState<any>(null);
   const [tracks, setTracks] = useState<any[]>([]);
   const [albums, setAlbums] = useState<any[]>([]);
+  const [allTracks, setAllTracks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [following, setFollowing] = useState(false);
   const [hoveredTrack, setHoveredTrack] = useState<string | null>(null);
 
+  // -------- 1) Carrega o artista --------
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
@@ -102,6 +106,43 @@ export default function ArtistPage() {
 
     return () => { cancelled = true; };
   }, [id]);
+
+  // -------- 2) Busca TODAS as faixas do artista --------
+  // O endpoint /artists/:id costuma limitar `tracks` às mais tocadas.
+  // Aqui buscamos o catálogo completo em /artists/:id/tracks.
+  // Se esse endpoint não existir, tentamos mesclar album.tracks como fallback.
+  useEffect(() => {
+    if (!artist?._id) return;
+    let cancelled = false;
+
+    const buildFallback = () => {
+      const map = new Map<string, any>();
+      (tracks ?? []).forEach((t: any) => { if (t?._id) map.set(t._id, t); });
+      (albums ?? []).forEach((al: any) => {
+        (al.tracks ?? []).forEach((t: any) => {
+          if (t?._id && !map.has(t._id)) map.set(t._id, t);
+        });
+      });
+      return [...map.values()];
+    };
+
+    fetch(`${API_URL}/artists/${artist._id}/tracks`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((data) => {
+        if (cancelled) return;
+        const list = data?.data ?? data;
+        if (Array.isArray(list) && list.length > 0) {
+          setAllTracks(list);
+        } else {
+          setAllTracks(buildFallback());
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAllTracks(buildFallback());
+      });
+
+    return () => { cancelled = true; };
+  }, [artist?._id, tracks, albums]);
 
   const topTracks = useMemo(() => {
     return [...tracks]
@@ -134,6 +175,17 @@ export default function ArtistPage() {
     }
 
     play(topTracks[0], topTracks);
+  };
+
+  /**
+   * Toca TODAS as faixas do artista em ordem aleatória.
+   * Prefere `allTracks` (catálogo completo). Cai pra `tracks` só se o fetch falhar.
+   * Usa `playShuffled` do store para já ativar a flag global de shuffle.
+   */
+  const handleShufflePlay = () => {
+    const pool = allTracks.length > 0 ? allTracks : tracks;
+    if (pool.length === 0) return;
+    playShuffled(pool);
   };
 
   const handleFollow = async () => {
@@ -182,6 +234,7 @@ export default function ArtistPage() {
   const socials = artist.socialLinks ?? {};
   const hasSocials =
     socials.website || socials.instagram || socials.twitter || socials.youtube;
+  const canShuffle = allTracks.length > 0 || tracks.length > 0;
 
   return (
     <div className="max-w-screen-xl mx-auto pb-24 px-4 md:px-6 lg:px-0">
@@ -198,24 +251,21 @@ export default function ArtistPage() {
 
       {/* ===================== HERO COMPACTO ===================== */}
       <div className="relative rounded-xl md:rounded-2xl overflow-hidden mb-6 md:mb-8">
-        {/* Background */}
         <div className="absolute inset-0">
-            {cover ? (
-                <>
-                <img src={cover} alt="" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-zinc-950/30" />
-                <div className="absolute inset-0 bg-gradient-to-r from-zinc-950/80 via-zinc-950/20 to-transparent" />
-                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/80 via-transparent to-zinc-950/20" />
-                </>
-            ) : (
-                <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black" />
-            )}
+          {cover ? (
+            <>
+              <img src={cover} alt="" className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-zinc-950/30" />
+              <div className="absolute inset-0 bg-gradient-to-r from-zinc-950/80 via-zinc-950/20 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/80 via-transparent to-zinc-950/20" />
+            </>
+          ) : (
+            <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black" />
+          )}
         </div>
 
         <div className="relative p-5 md:p-7 flex flex-col lg:flex-row lg:items-end gap-5 lg:gap-8">
-          {/* Esquerda: Avatar + Info */}
           <div className="flex flex-col sm:flex-row gap-4 sm:gap-5 flex-1 min-w-0">
-            {/* Avatar */}
             <div className="relative shrink-0">
               <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden shadow-xl shadow-black/40 ring-1 ring-white/10">
                 {avatar ? (
@@ -228,7 +278,6 @@ export default function ArtistPage() {
               </div>
             </div>
 
-            {/* Info */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2">
                 <span className="px-2.5 py-0.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/10 text-[10px] font-bold uppercase tracking-[0.15em] text-white/80">
@@ -289,6 +338,20 @@ export default function ArtistPage() {
                   )}
                 </button>
 
+                {/* Botão ALEATÓRIO */}
+                <button
+                  onClick={handleShufflePlay}
+                  disabled={!canShuffle}
+                  title="Tocar aleatoriamente"
+                  aria-label="Tocar aleatoriamente"
+                  className="group/shuffle w-10 h-10 md:w-11 md:h-11 rounded-full border border-zinc-700 bg-zinc-900/50 backdrop-blur-sm hover:bg-zinc-800/70 hover:border-zinc-500 transition-all duration-300 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Shuffle
+                    size={16}
+                    className="text-zinc-300 group-hover/shuffle:text-white transition-colors duration-300"
+                  />
+                </button>
+
                 {token && (
                   <button
                     onClick={handleFollow}
@@ -310,9 +373,7 @@ export default function ArtistPage() {
             </div>
           </div>
 
-          {/* Direita: Painel de Stats + Redes (desktop only) */}
           <div className="hidden lg:flex flex-col gap-3 shrink-0 w-56">
-            {/* Stats mini */}
             <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -334,7 +395,6 @@ export default function ArtistPage() {
               </div>
             </div>
 
-            {/* Redes */}
             {hasSocials && (
               <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-3">
                 <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold mb-2">Redes</p>
@@ -376,7 +436,6 @@ export default function ArtistPage() {
 
       {/* ===================== CONTEÚDO PRINCIPAL ===================== */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8">
-        {/* Coluna Esquerda */}
         <div className="min-w-0 space-y-10">
           {/* POPULARES */}
           <section>
@@ -397,7 +456,6 @@ export default function ArtistPage() {
                 {topTracks.map((track, i) => {
                   const isCurrent = currentTrack?._id === track._id;
                   const isHovered = hoveredTrack === track._id;
-                  const trackCover = resolveTrackCover(track);
 
                   return (
                     <div
@@ -407,7 +465,6 @@ export default function ArtistPage() {
                       onMouseEnter={() => setHoveredTrack(track._id)}
                       onMouseLeave={() => setHoveredTrack(null)}
                     >
-                      {/* Número / Play / Equalizer */}
                       <div className="w-5 md:w-6 flex items-center justify-center shrink-0">
                         {isCurrent && isPlaying ? (
                           <div className="flex items-end gap-[2px] h-3.5">
@@ -423,18 +480,6 @@ export default function ArtistPage() {
                         )}
                       </div>
 
-                      {/* Capa — agora prioriza album.cover */}
-                      <div className="w-9 h-9 md:w-10 md:h-10 rounded-md overflow-hidden shrink-0 bg-zinc-900 ring-1 ring-white/5">
-                        {trackCover ? (
-                          <img src={trackCover} alt={track.title} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Music2 size={14} className="text-zinc-700" />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Info */}
                       <div className="flex-1 min-w-0">
                         <TrackCard
                           track={track}
@@ -443,7 +488,6 @@ export default function ArtistPage() {
                         />
                       </div>
 
-                      {/* Duração */}
                       <span className="text-[11px] text-zinc-600 font-medium tabular-nums shrink-0">
                         {formatTrackTime(track.duration)}
                       </span>
@@ -454,7 +498,7 @@ export default function ArtistPage() {
             )}
           </section>
 
-          {/* DISCOGRAFIA - largura total */}
+          {/* DISCOGRAFIA */}
           <section>
             <div className="flex items-center justify-between mb-4 md:mb-5">
               <h2 className="text-xl font-bold tracking-tight">Discografia</h2>
@@ -518,7 +562,6 @@ export default function ArtistPage() {
 
         {/* Coluna Direita: Sobre */}
         <aside className="space-y-4 md:space-y-5">
-          {/* Stats mobile/tablet */}
           <div className="lg:hidden rounded-xl border border-zinc-800/50 bg-zinc-900/30 p-3 md:p-4">
             <div className="grid grid-cols-4 gap-3 text-center">
               <div>
@@ -540,7 +583,6 @@ export default function ArtistPage() {
             </div>
           </div>
 
-          {/* Biografia */}
           {artist.bio && (
             <div className="rounded-xl border border-zinc-800/50 bg-zinc-900/30 p-5">
               <h3 className="text-[11px] font-bold uppercase tracking-[0.15em] text-zinc-500 mb-3 flex items-center gap-2">
@@ -553,7 +595,6 @@ export default function ArtistPage() {
             </div>
           )}
 
-          {/* Redes mobile/tablet */}
           <div className="lg:hidden rounded-xl border border-zinc-800/50 bg-zinc-900/30 p-3 md:p-4">
             <h3 className="text-[11px] font-bold uppercase tracking-[0.15em] text-zinc-500 mb-3">Redes</h3>
             <div className="flex gap-2">

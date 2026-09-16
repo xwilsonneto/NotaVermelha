@@ -6,8 +6,11 @@ import { usePlayerStore } from '../store/playerStore';
 import { trackService } from '../services/api';
 import {
   Play, Pause, SkipBack, SkipForward,
-  Volume2, VolumeX, Music2
+  Volume2, VolumeX, Music2, Shuffle
 } from 'lucide-react';
+
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000/api';
 
 function formatTime(s: number) {
   if (!s || isNaN(s)) return '0:00';
@@ -22,8 +25,11 @@ function albumIdOf(track: any): string | null {
 }
 
 export default function Player() {
-  const { currentTrack, queue, currentIndex, setCurrentIndex, isPlaying, setIsPlaying } =
-    usePlayerStore();
+  const {
+    currentTrack, queue, currentIndex, setCurrentIndex,
+    isPlaying, setIsPlaying,
+    shuffle, toggleShuffle,
+  } = usePlayerStore();
 
   const router = useRouter();
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -43,7 +49,6 @@ export default function Player() {
     if (now - lastAdvanceAtRef.current < 1000) return;
     lastAdvanceAtRef.current = now;
 
-    console.log('[player] advance', { currentIndex, queueLen: queue.length });
     if (currentIndex < queue.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
@@ -54,7 +59,7 @@ export default function Player() {
   const advanceRef = useRef(advance);
   useEffect(() => { advanceRef.current = advance; });
 
-  // 1) Carrega a faixa SOMENTE quando a faixa muda (sem listener canplay)
+  // 1) Carrega faixa ao mudar
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !currentTrack) return;
@@ -65,13 +70,12 @@ export default function Player() {
     audio.load();
     trackService.registerPlay(currentTrack._id)?.catch?.(() => {});
 
-    // play() antes do buffer estar pronto é seguro: o elemento enfileira
     if (isPlayingRef.current) {
       audio.play().catch(() => setIsPlaying(false));
     }
   }, [currentTrack, setIsPlaying]);
 
-  // 2) Play/pause apenas alterna estado (sem recarregar nada)
+  // 2) Play/pause
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !currentTrack) return;
@@ -91,13 +95,11 @@ export default function Player() {
     if (!audio) return;
     setProgress(audio.currentTime);
     setDuration(audio.duration || 0);
-    // Fallback: se o navegador não disparou 'ended' (stall no fim), avança aqui
     if (audio.ended) advanceRef.current();
   };
 
   const handleEnded = () => advanceRef.current();
 
-  // Se a faixa falhar (arquivo ruim/URL quebrada), pula em vez de travar
   const handleError = () => {
     console.warn('[player] audio error, pulando faixa', currentTrack?.title);
     if (currentIndex < queue.length - 1) setCurrentIndex(currentIndex + 1);
@@ -126,9 +128,35 @@ export default function Player() {
   const nextRef = useRef(next);
   useEffect(() => { prevRef.current = prev; nextRef.current = next; });
 
+  // ============ TOGGLE SHUFFLE ============
+  const handleToggleShuffle = useCallback(async () => {
+    if (!currentTrack) return;
 
+    if (shuffle) {
+      // DESATIVANDO: precisa buscar as faixas do álbum atual
+      // para restaurar a ordem original, sem trocar a música.
+      const albumId = albumIdOf(currentTrack);
+      let albumTracks: any[] | undefined;
 
-    // 4) Media Session: metadados + controles na tela bloqueada / notification shade
+      if (albumId) {
+        try {
+          const res = await fetch(`${API_URL}/albums/${albumId}`);
+          const data = await res.json();
+          const album = data?.data ?? data;
+          albumTracks = album?.tracks ?? [];
+        } catch (err) {
+          console.warn('[player] não foi possível restaurar ordem do álbum', err);
+        }
+      }
+
+      toggleShuffle(albumTracks);
+    } else {
+      // ATIVANDO: o próprio store cuida de embaralhar o que vem depois
+      toggleShuffle();
+    }
+  }, [shuffle, currentTrack, toggleShuffle]);
+
+  // 4) Media Session
   useEffect(() => {
     if (!('mediaSession' in navigator) || !currentTrack) return;
 
@@ -142,10 +170,6 @@ export default function Player() {
       ? new URL(currentTrack.coverUrl, window.location.origin).href
       : null;
 
-    if (cover) {
-      console.log('[MediaSession] capa:', cover);
-    }
-
     ms.metadata = new MediaMetadata({
       title: currentTrack.title,
       artist: artistName,
@@ -155,30 +179,12 @@ export default function Player() {
           : currentTrack.album ?? '',
       artwork: cover
         ? [
-            {
-              src: cover,
-              sizes: '96x96',
-            },
-            {
-              src: cover,
-              sizes: '128x128',
-            },
-            {
-              src: cover,
-              sizes: '192x192',
-            },
-            {
-              src: cover,
-              sizes: '256x256',
-            },
-            {
-              src: cover,
-              sizes: '384x384',
-            },
-            {
-              src: cover,
-              sizes: '512x512',
-            },
+            { src: cover, sizes: '96x96' },
+            { src: cover, sizes: '128x128' },
+            { src: cover, sizes: '192x192' },
+            { src: cover, sizes: '256x256' },
+            { src: cover, sizes: '384x384' },
+            { src: cover, sizes: '512x512' },
           ]
         : [],
     });
@@ -199,16 +205,12 @@ export default function Player() {
     ];
 
     for (const [action, fn] of handlers) {
-      try {
-        ms.setActionHandler(action, fn);
-      } catch {}
+      try { ms.setActionHandler(action, fn); } catch {}
     }
 
     return () => {
       for (const [action] of handlers) {
-        try {
-          ms.setActionHandler(action, null);
-        } catch {}
+        try { ms.setActionHandler(action, null); } catch {}
       }
     };
   }, [currentTrack, setIsPlaying]);
@@ -270,6 +272,25 @@ export default function Player() {
 
             {/* Controls */}
             <div className="flex items-center gap-0.5 md:gap-1 shrink-0">
+
+              {/* Botão ALEATÓRIO */}
+              <button
+                onClick={handleToggleShuffle}
+                title={shuffle ? 'Desativar modo aleatório' : 'Ativar modo aleatório'}
+                aria-label={shuffle ? 'Desativar modo aleatório' : 'Ativar modo aleatório'}
+                aria-pressed={shuffle}
+                className={`relative w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full transition-colors ${
+                  shuffle
+                    ? 'text-red-500 hover:text-red-400'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                }`}
+              >
+                <Shuffle size={16} />
+                {shuffle && (
+                  <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-red-500" />
+                )}
+              </button>
+
               <button
                 onClick={prev}
                 className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800"

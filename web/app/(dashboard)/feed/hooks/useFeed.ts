@@ -32,15 +32,29 @@ export interface PostAuthor {
   avatar:   string;
 }
 
+export interface PostAttachment {
+  kind: string;   // 'image' | 'video'
+  url:  string;
+  meta?: any;
+}
+
 export interface Post {
-  _id:         string;
-  text:        string;
-  author:      PostAuthor;
-  likes:       string[];
-  reposts:     string[];
-  createdAt:   string;
-  type:        'text' | 'music' | 'event';
-  attachments: unknown[];
+  _id:            string;
+  text:           string;
+  author:         PostAuthor;
+  likes:          string[];
+  reposts:        string[];
+  createdAt:      string;
+  type:           'text' | 'music' | 'event';
+  attachments:    PostAttachment[];
+  commentsCount?: number;
+  track?:         any;
+  isRepost?:      boolean;
+  /**
+   * Só está "completo" quando populado (objeto).
+   * Quando é string, é o ObjectId cru — tratar como original não carregado.
+   */
+  originalPost?:  Post | string | null;
 }
 
 interface FeedState {
@@ -49,6 +63,23 @@ interface FeedState {
   loadingMore: boolean;
   error:       string | null;
   hasMore:     boolean;
+}
+
+/**
+ * O FeedCard opera sobre o conteúdo ORIGINAL (originalPost quando populado),
+ * então o id alvo pode ser o do wrapper OU o do original dentro do wrapper.
+ */
+function matchesPostOrOriginal(p: Post, targetId: string): boolean {
+  if (p._id === targetId) return true;
+  const op = p.originalPost;
+  if (op && typeof op === 'object' && op._id === targetId) return true;
+  return false;
+}
+
+/** Retorna o objeto alvo dentro do post (original populado ou o próprio post). */
+function resolveTarget(p: Post): Post {
+  const op = p.originalPost;
+  return op && typeof op === 'object' ? op : p;
 }
 
 export function useFeed(currentUserId: string) {
@@ -130,17 +161,22 @@ export function useFeed(currentUserId: string) {
   }, []);
 
   const toggleLike = useCallback(async (postId: string) => {
+    // Atualização otimista — casando wrapper OU original
     setState(prev => ({
       ...prev,
       posts: prev.posts.map(p => {
-        if (p._id !== postId) return p;
-        const liked = p.likes.includes(currentUserId);
-        return {
-          ...p,
-          likes: liked
-            ? p.likes.filter(id => id !== currentUserId)
-            : [...p.likes, currentUserId],
-        };
+        if (!matchesPostOrOriginal(p, postId)) return p;
+        const target = resolveTarget(p);
+        const liked  = target.likes.includes(currentUserId);
+        const newLikes = liked
+          ? target.likes.filter(id => id !== currentUserId)
+          : [...target.likes, currentUserId];
+
+        // Atualiza no lugar certo (original populado ou o próprio post)
+        if (p.originalPost && typeof p.originalPost === 'object') {
+          return { ...p, originalPost: { ...p.originalPost, likes: newLikes } };
+        }
+        return { ...p, likes: newLikes };
       }),
     }));
 
@@ -156,11 +192,17 @@ export function useFeed(currentUserId: string) {
       setState(prev => ({
         ...prev,
         posts: prev.posts.map(p => {
-          if (p._id !== postId) return p;
+          if (!matchesPostOrOriginal(p, postId)) return p;
+          const base = resolveTarget(p);
           const likes = liked
-            ? [...p.likes.filter(id => id !== currentUserId), currentUserId]
-            : p.likes.filter(id => id !== currentUserId);
-          return { ...p, likes: likes.slice(0, likesCount) };
+            ? [...base.likes.filter(id => id !== currentUserId), currentUserId]
+            : base.likes.filter(id => id !== currentUserId);
+          const finalLikes = likes.slice(0, likesCount);
+
+          if (p.originalPost && typeof p.originalPost === 'object') {
+            return { ...p, originalPost: { ...p.originalPost, likes: finalLikes } };
+          }
+          return { ...p, likes: finalLikes };
         }),
       }));
     } catch {
@@ -169,17 +211,21 @@ export function useFeed(currentUserId: string) {
   }, [currentUserId, loadFeed]);
 
   const toggleRepost = useCallback(async (postId: string) => {
+    // Atualização otimista — casando wrapper OU original
     setState(prev => ({
       ...prev,
       posts: prev.posts.map(p => {
-        if (p._id !== postId) return p;
-        const reposted = p.reposts.includes(currentUserId);
-        return {
-          ...p,
-          reposts: reposted
-            ? p.reposts.filter(id => id !== currentUserId)
-            : [...p.reposts, currentUserId],
-        };
+        if (!matchesPostOrOriginal(p, postId)) return p;
+        const target   = resolveTarget(p);
+        const reposted = target.reposts.includes(currentUserId);
+        const newReposts = reposted
+          ? target.reposts.filter(id => id !== currentUserId)
+          : [...target.reposts, currentUserId];
+
+        if (p.originalPost && typeof p.originalPost === 'object') {
+          return { ...p, originalPost: { ...p.originalPost, reposts: newReposts } };
+        }
+        return { ...p, reposts: newReposts };
       }),
     }));
 
@@ -195,9 +241,10 @@ export function useFeed(currentUserId: string) {
   }, [currentUserId, loadFeed]);
 
   const deletePost = useCallback(async (postId: string): Promise<boolean> => {
+    // Remove o wrapper cujo original (ou ele mesmo) é o alvo
     setState(prev => ({
       ...prev,
-      posts: prev.posts.filter(p => p._id !== postId),
+      posts: prev.posts.filter(p => !matchesPostOrOriginal(p, postId)),
     }));
 
     try {

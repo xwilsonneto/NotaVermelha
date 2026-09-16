@@ -3,6 +3,9 @@
 const Post        = require("../models/Post");
 const feedService = require("../services/feedService");
 
+// Campos do autor que serão enviados ao front
+const AUTHOR_FIELDS = "name username avatar";
+
 // GET /api/feed
 // Feed clássico: posts da comunidade + conteúdo dos artistas seguidos
 exports.getFeed = async (req, res) => {
@@ -16,7 +19,12 @@ exports.getFeed = async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate("author", "name username avatar");
+      .populate("author", AUTHOR_FIELDS)
+      // Traz o post original do repost + autor dele + faixa anexada
+      .populate({ path: "originalPost", populate: [
+        { path: "author", select: AUTHOR_FIELDS },
+        { path: "track" },
+      ] });
 
     // Conteúdo musical dos artistas seguidos
     const musicContent = await feedService.getUserFeed(req.user.id);
@@ -46,10 +54,15 @@ exports.getFeedCursor = async (req, res) => {
     const posts = await Post.find(query)
       .sort({ _id: -1 })
       .limit(limit + 1)             // busca 1 a mais para saber se há próxima página
-      .populate("author", "name username avatar");
+      .populate("author", AUTHOR_FIELDS)
+      // Traz o post original do repost + autor dele + faixa anexada
+      .populate({ path: "originalPost", populate: [
+        { path: "author", select: AUTHOR_FIELDS },
+        { path: "track" },
+      ] });
 
-    const hasMore   = posts.length > limit;
-    const items     = hasMore ? posts.slice(0, limit) : posts;
+    const hasMore    = posts.length > limit;
+    const items      = hasMore ? posts.slice(0, limit) : posts;
     const nextCursor = hasMore ? items[items.length - 1]._id : null;
 
     res.json({ success: true, posts: items, nextCursor, hasMore });
